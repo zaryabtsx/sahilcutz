@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import { Scissors, Wind, Sparkles, Droplet, Palette, Clock, ArrowUpRight, ChevronRight } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -189,7 +190,8 @@ export function Services() {
 
             return (
               <motion.div
-                key={svc.title}
+                // key={svc.title}
+                key={i}
                 layout
                 initial={{ opacity: 0, y: 32 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -290,21 +292,23 @@ export function Services() {
                   {/* CTA — slides in on active */}
                   <AnimatePresence initial={false}>
                     {isActive && (
-                      <motion.button
-                        key="cta"
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 8 }}
-                        transition={{ duration: 0.22 }}
-                        onClick={e => e.stopPropagation()}
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white"
-                        style={{ background: `linear-gradient(135deg, ${svc.color}, ${svc.color}bb)` }}
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                      >
-                        Book Now
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </motion.button>
+                      <Link href="/booking-new" className="block">
+                        <motion.button
+                          key="cta"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 8 }}
+                          transition={{ duration: 0.22 }}
+                          onClick={e => e.stopPropagation()}
+                          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white"
+                          style={{ background: `linear-gradient(135deg, ${svc.color}, ${svc.color}bb)` }}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                        >
+                          Book Now
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </motion.button>
+                      </Link>
                     )}
                   </AnimatePresence>
                 </div>
@@ -327,7 +331,7 @@ export function Services() {
           }}
         >
           <div>
-            <p className="text-sm font-black text-foreground">Can't decide? Let us pick for you.</p>
+            <p className="text-sm font-black text-foreground">Can&lsquo;t decide? Let us pick for you.</p>
             <p className="text-xs text-muted-foreground mt-0.5">Our barbers will recommend the right service for your style.</p>
           </div>
           <motion.button

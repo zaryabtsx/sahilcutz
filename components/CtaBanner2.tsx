@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 const STATS = [
@@ -78,13 +79,13 @@ export function CtaBanner2() {
 
         {/* CTAs */}
         <div className="flex flex-wrap justify-center gap-3 animate-[fadeUp_.7s_.64s_ease_both] opacity-0">
-          <a
-            href="#booking"
+          <Link
+            href="/booking-new"
             className="group inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-glow-lg)] transition-all hover:bg-primary-dark hover:-translate-y-px"
           >
             Book Your Appointment
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-          </a>
+          </Link>
           <a
             href="#contact"
             className="inline-flex items-center justify-center rounded-full glass px-8 py-3.5 text-sm font-medium text-foreground hover:border-primary/40 transition-all"

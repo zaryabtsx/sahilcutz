@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { motion } from 'motion/react';
 import { Scissors, MapPin, Phone, Mail, Clock, Share2, Camera, MessageCircle, ArrowUpRight, ChevronRight } from 'lucide-react';
 
@@ -70,15 +71,16 @@ export function Footer() {
               Book Your Session Today
             </h3>
           </div>
-          <motion.a
-            href="#booking"
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="group inline-flex items-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow duration-300"
-          >
-            Book Appointment
-            <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
-          </motion.a>
+          <Link href="/booking-new" className="group inline-flex items-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow duration-300 no-underline">
+            <motion.div
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="w-full h-full flex items-center gap-2"
+            >
+              Book Appointment
+              <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
+            </motion.div>
+          </Link>
         </motion.div>
 
         {/* Main grid */}

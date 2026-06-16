@@ -1,0 +1,211 @@
+'use client';
+
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Eye, EyeOff, ArrowRight, ShieldCheck, Mail, User, Lock } from 'lucide-react';
+import { loginSchema, signupSchema, forgotPasswordSchema } from '@/lib/validators';
+import { supabase } from '@/lib/supabase';
+import type { z } from 'zod';
+
+interface AuthCardProps {
+  mode: 'login' | 'signup' | 'forgot';
+  onSuccess?: () => void;
+}
+
+const formConfig = {
+  login: {
+    title: 'Sign In',
+    subtitle: 'Access your booking dashboard and manage appointments seamlessly.',
+    button: 'Continue to Dashboard',
+  },
+  signup: {
+    title: 'Create Account',
+    subtitle: 'Join Sahil Cutzz for premium barber booking and customer perks.',
+    button: 'Create Account',
+  },
+  forgot: {
+    title: 'Recover Password',
+    subtitle: 'Send a reset link to your email and regain access immediately.',
+    button: 'Send Reset Link',
+  },
+};
+
+export function AuthCard({ mode, onSuccess }: AuthCardProps) {
+  const [showPassword, setShowPassword] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const schema = mode === 'signup' ? signupSchema : mode === 'forgot' ? forgotPasswordSchema : loginSchema;
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) });
+
+  const handleForm = async (values: z.infer<typeof schema>) => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setLoading(true);
+
+    try {
+      if (mode === 'login') {
+        const { error, data } = await supabase.auth.signInWithPassword({
+          email: values.email,
+          password: (values as any).password,
+        });
+
+        if (error) throw error;
+        setSuccessMessage('Welcome back! Redirecting…');
+        onSuccess?.();
+      }
+
+      if (mode === 'signup') {
+        const { error } = await supabase.auth.signUp({
+          email: values.email,
+          password: (values as any).password,
+          options: {
+            data: {
+              full_name: (values as any).full_name,
+              phone: (values as any).phone,
+              role: (values as any).role,
+            },
+          },
+        });
+
+        if (error) throw error;
+        setSuccessMessage('Account created successfully. Check your email to verify.');
+      }
+
+      if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+          redirectTo: `${window.location.origin}/auth/login`,
+        });
+
+        if (error) throw error;
+        setSuccessMessage('Password recovery link sent. Check your inbox.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Unable to complete request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+      className="w-full max-w-md"
+    >
+      <div className="bg-card border border-border rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 w-16 h-16 rounded-3xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))' }}>
+            <ShieldCheck className="w-7 h-7 text-primary-foreground" />
+          </div>
+          <h1 className="text-3xl font-black text-foreground">{formConfig[mode].title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground max-w-xs mx-auto">{formConfig[mode].subtitle}</p>
+        </div>
+
+        <form onSubmit={handleSubmit(handleForm)} className="space-y-4">
+          {mode === 'signup' && (
+            <div>
+              <label htmlFor="full_name" className="text-sm font-medium text-foreground block mb-2">Full Name</label>
+              <div className="relative">
+                <User className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  id="full_name"
+                  type="text"
+                  {...(register as any)('full_name')}
+                  className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                />
+              </div>
+              {(errors as any).full_name && <p className="text-xs text-destructive mt-2">{(errors as any).full_name.message}</p>}
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="email" className="text-sm font-medium text-foreground block mb-2">Email</label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
+              <input
+                id="email"
+                type="email"
+                {...(register as any)('email')}
+                className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              />
+            </div>
+            {(errors as any).email && <p className="text-xs text-destructive mt-2">{(errors as any).email.message}</p>}
+          </div>
+
+          {mode !== 'forgot' && (
+            <div>
+              <label htmlFor="password" className="text-sm font-medium text-foreground block mb-2">Password</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  {...(register as any)('password')}
+                  className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {(errors as any).password && <p className="text-xs text-destructive mt-2">{(errors as any).password.message}</p>}
+            </div>
+          )}
+
+          {mode === 'signup' && (
+            <div>
+              <label htmlFor="phone" className="text-sm font-medium text-foreground block mb-2">Phone Number</label>
+              <input
+                id="phone"
+                type="tel"
+                {...(register as any)('phone')}
+                className="w-full rounded-2xl border border-border bg-background/90 px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              />
+              {(errors as any).phone && <p className="text-xs text-destructive mt-2">{(errors as any).phone.message}</p>}
+            </div>
+          )}
+
+          {mode === 'signup' && (
+            <div>
+              <label htmlFor="role" className="text-sm font-medium text-foreground block mb-2">Account Type</label>
+              <select
+                id="role"
+                {...(register as any)('role')}
+                className="w-full rounded-2xl border border-border bg-background/90 px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              >
+                <option value="customer">Customer</option>
+                <option value="barber">Barber</option>
+              </select>
+            </div>
+          )}
+
+          {successMessage && <div className="rounded-2xl bg-success/10 border border-success/20 p-4 text-sm text-success">{successMessage}</div>}
+          {errorMessage && <div className="rounded-2xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">{errorMessage}</div>}
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-2xl px-5 py-3.5 bg-gradient-to-r from-primary to-accent text-primary-foreground font-semibold shadow-xl shadow-primary/20"
+          >
+            {loading ? 'Working…' : formConfig[mode].button}
+          </motion.button>
+        </form>
+      </div>
+    </motion.div>
+  );
+}

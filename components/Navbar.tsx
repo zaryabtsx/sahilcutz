@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Menu, X, Scissors, Phone, Calendar, ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Menu, X, Scissors, Phone, Calendar, ChevronRight, LogOut, User, LogIn } from "lucide-react";
 import {
   motion,
   AnimatePresence,
@@ -9,16 +11,28 @@ import {
   useMotionValueEvent,
 } from "motion/react";
 import { ThemeToggle } from "./ThemeToggle";
+import { getSession, clearSession, isAdminAuthenticated, clearAdminToken } from "@/lib/auth";
+import type { AuthSession } from "@/lib/types";
 
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeLink, setActiveLink] = useState("Home");
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const router = useRouter();
   const { scrollY } = useScroll();
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     setIsScrolled(latest > 40);
   });
+
+  useEffect(() => {
+    // Check session on component mount
+    const userSession = getSession();
+    setSession(userSession);
+    setIsAdmin(isAdminAuthenticated());
+  }, []);
 
   // Lock body scroll when mobile menu is open
   useEffect(() => {
@@ -31,6 +45,15 @@ export function Navbar() {
       document.body.style.overflow = "";
     };
   }, [isMobileMenuOpen]);
+
+  const handleLogout = () => {
+    clearSession();
+    clearAdminToken();
+    setSession(null);
+    setIsAdmin(false);
+    setIsMobileMenuOpen(false);
+    router.push("/");
+  };
 
   const navLinks = [
     { name: "Home", href: "#home", icon: "✦" },
@@ -132,18 +155,82 @@ export function Navbar() {
               {/* Right actions */}
               <div className="flex items-center gap-3">
                 <ThemeToggle />
-                <motion.button
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm font-bold text-primary-foreground shadow-lg"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
-                  }}
-                >
-                  <Calendar className="w-4 h-4" />
-                  Book Now
-                </motion.button>
+                {session ? (
+                  <>
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/60 bg-card/50">
+                      <User className="w-4 h-4" />
+                      <span className="text-sm font-medium text-foreground">
+                        {isAdmin ? "Admin" : session.user.full_name?.split(" ")[0] || "User"}
+                      </span>
+                    </div>
+                    {isAdmin ? (
+                      <Link href="/admin/dashboard">
+                        <motion.button
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.96 }}
+                          className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm font-bold text-primary-foreground shadow-lg"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #ef4444, #dc2626)",
+                          }}
+                        >
+                          <span>Dashboard</span>
+                        </motion.button>
+                      </Link>
+                    ) : (
+                      <Link href="/customer/dashboard">
+                        <motion.button
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.96 }}
+                          className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm font-bold text-primary-foreground shadow-lg"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
+                          }}
+                        >
+                          <Calendar className="w-4 h-4" />
+                          Dashboard
+                        </motion.button>
+                      </Link>
+                    )}
+                    <motion.button
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={handleLogout}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-destructive/30 text-sm font-bold text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Logout
+                    </motion.button>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/auth/login">
+                      <motion.button
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.96 }}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm font-bold text-foreground hover:bg-card/50 transition-colors"
+                      >
+                        <LogIn className="w-4 h-4" />
+                        Login
+                      </motion.button>
+                    </Link>
+                    <Link href="/booking-new">
+                      <motion.button
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.96 }}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm font-bold text-primary-foreground shadow-lg"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
+                        }}
+                      >
+                        <Calendar className="w-4 h-4" />
+                        Book Now
+                      </motion.button>
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -315,34 +402,113 @@ export function Navbar() {
                 <div className="my-4 h-px bg-border/60" />
 
                 {/* CTA buttons */}
-                <motion.a
-                  href="tel:+1234567890"
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.34, duration: 0.32 }}
-                  className="flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border border-border/60 bg-card/80 text-foreground font-semibold"
-                >
-                  <Phone
-                    className="w-4 h-4"
-                    style={{ color: "var(--color-primary)" }}
-                  />
-                  Call Us
-                </motion.a>
+                {session ? (
+                  <>
+                    <div className="px-5 py-3 rounded-2xl bg-card/50 border border-border/60">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                        Logged in as
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {isAdmin ? "Admin" : session.user.full_name}
+                      </p>
+                    </div>
 
-                <motion.button
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4, duration: 0.32 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="flex items-center justify-center gap-3 px-6 py-4 rounded-lg text-primary-foreground font-bold text-base shadow-xl"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
-                  }}
-                >
-                  <Calendar className="w-5 h-5" />
-                  Book Appointment
-                </motion.button>
+                    {isAdmin ? (
+                      <motion.a
+                        href="/admin/dashboard"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.34, duration: 0.32 }}
+                        className="flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-primary-foreground font-bold text-base shadow-xl"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #ef4444, #dc2626)",
+                        }}
+                      >
+                        <span>Admin Dashboard</span>
+                      </motion.a>
+                    ) : (
+                      <motion.a
+                        href="/customer/dashboard"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.34, duration: 0.32 }}
+                        className="flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-primary-foreground font-bold text-base shadow-xl"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
+                        }}
+                      >
+                        <Calendar className="w-5 h-5" />
+                        My Dashboard
+                      </motion.a>
+                    )}
+
+                    <motion.button
+                      onClick={handleLogout}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.4, duration: 0.32 }}
+                      whileTap={{ scale: 0.97 }}
+                      className="flex items-center justify-center gap-3 px-6 py-4 rounded-lg border border-destructive/30 font-bold text-base text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      Logout
+                    </motion.button>
+                  </>
+                ) : (
+                  <>
+                    <motion.a
+                      href="tel:+1234567890"
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.34, duration: 0.32 }}
+                      className="flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border border-border/60 bg-card/80 text-foreground font-semibold"
+                    >
+                      <Phone
+                        className="w-4 h-4"
+                        style={{ color: "var(--color-primary)" }}
+                      />
+                      Call Us
+                    </motion.a>
+
+                    <motion.a
+                      href="/auth/login"
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.37, duration: 0.32 }}
+                      className="flex items-center justify-center gap-3 px-6 py-4 rounded-lg border border-border/60 font-bold text-base text-foreground hover:bg-card transition-colors"
+                    >
+                      <LogIn className="w-5 h-5" />
+                      Customer Login
+                    </motion.a>
+
+                    <motion.a
+                      href="/booking-new"
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.4, duration: 0.32 }}
+                      className="flex items-center justify-center gap-3 px-6 py-4 rounded-lg text-primary-foreground font-bold text-base shadow-xl"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
+                      }}
+                    >
+                      <Calendar className="w-5 h-5" />
+                      Book Now
+                    </motion.a>
+
+                    <motion.a
+                      href="/admin/login"
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.43, duration: 0.32 }}
+                      className="flex items-center justify-center gap-3 px-6 py-4 rounded-lg border border-red-500/30 font-bold text-base text-red-600 hover:bg-red-500/10 transition-colors"
+                    >
+                      <span>Admin Access</span>
+                    </motion.a>
+                  </>
+                )}
               </div>
 
               {/* Footer inside drawer */}

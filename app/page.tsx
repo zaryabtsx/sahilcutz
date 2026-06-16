@@ -14,7 +14,7 @@ import { Testimonials } from "@/components/Testimonials";
 export default function Home() {
   return (
     <>
-      <Navbar />
+      {/* <Navbar /> */}
       <Hero></Hero>
       <Services></Services>
       {/* <WhyUs></WhyUs> */}
