@@ -280,7 +280,7 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
       <div className="mt-6 text-center text-sm text-muted-foreground space-y-2">
         {mode === 'login' && (
           <p>
-            Don't have an account?{' '}
+            Don&#39;t have an account?{' '}
             <Link href="/auth/signup" className="font-semibold text-primary hover:underline underline-offset-4">
               Sign up
             </Link>

@@ -7,14 +7,17 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminAuthCard } from '@/components/AdminAuthCard';
-import { isAdminAuthenticated } from '@/lib/auth';
+import { getSession, getAdminToken } from '@/lib/auth';
 import Link from 'next/link';
 
 export default function AdminLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (isAdminAuthenticated()) {
+    // Check if user is already authenticated as admin
+    const session = getSession();
+    const isAdmin = session?.user.role === 'admin' || getAdminToken() === 'admin_verified';
+    if (isAdmin) {
       router.push('/admin/dashboard');
     }
   }, [router]);

@@ -15,6 +15,7 @@ export default function Home() {
   return (
     <>
       {/* <Navbar /> */}
+       <Navbar></Navbar>
       <Hero></Hero>
       <Services></Services>
       {/* <WhyUs></WhyUs> */}
@@ -25,7 +26,6 @@ export default function Home() {
       <CtaBanner2></CtaBanner2>
       <Testimonials></Testimonials>
       {/* <Services2></Services2> */}
-
       <Footer />
     </>
   );

@@ -1,4 +1,5 @@
-import { supabase, hasSupabaseConfig } from './supabaseClient';
+// lib/auth.ts  ← fix this one import line
+import { supabase, hasSupabaseConfig } from './supabase';  // ✅ not supabaseClient
 import type { AuthSession, UserProfile, UserRole } from './types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────

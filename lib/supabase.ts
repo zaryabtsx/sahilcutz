@@ -12,4 +12,8 @@ export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+export function hasSupabaseConfig(): boolean {
+  return Boolean(supabaseUrl && supabaseAnonKey);
+}
+
 export type SupabaseSession = Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'];

@@ -1,14 +1,10 @@
 'use client';
 
-// ─────────────────────────────────────────────────────────────
-//  app/auth/login/page.tsx
-// ─────────────────────────────────────────────────────────────
-
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthCard } from '@/components/AuthCard';
 import { getSession, isAuthenticated } from '@/lib/auth';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabase';  // ✅ fixed
 import Link from 'next/link';
 
 function redirectByRole(role: string, router: ReturnType<typeof useRouter>) {
@@ -20,7 +16,6 @@ function redirectByRole(role: string, router: ReturnType<typeof useRouter>) {
 export default function LoginPage() {
   const router = useRouter();
 
-  // If already logged in, redirect immediately
   useEffect(() => {
     isAuthenticated().then((ok) => {
       if (!ok) return;
@@ -30,23 +25,19 @@ export default function LoginPage() {
   }, [router]);
 
   const handleSuccess = async () => {
-    // 1. Try custom session first (written by signIn in auth.ts)
     const session = getSession();
     if (session?.user.role) {
       redirectByRole(session.user.role, router);
       return;
     }
 
-    // 2. Fallback: read directly from Supabase session
     const { data } = await supabase.auth.getSession();
     if (data.session) {
       const meta = data.session.user.user_metadata ?? {};
-      const role = meta.role ?? 'customer';
-      redirectByRole(role, router);
+      redirectByRole(meta.role ?? 'customer', router);
       return;
     }
 
-    // 3. Last resort — just go to customer dashboard
     router.push('/customer/dashboard');
   };
 
@@ -67,20 +58,19 @@ export default function LoginPage() {
 
         <div className="mt-6 space-y-2 text-center text-sm text-muted-foreground">
           <p>
-            Don't have an account?{' '}
-            <Link
-              href="/auth/signup"
-              className="font-semibold text-primary hover:underline underline-offset-4"
-            >
+            Don&lsquo;t have an account?{' '}
+            <Link href="/auth/signup" className="font-semibold text-primary hover:underline underline-offset-4">
               Create one
             </Link>
           </p>
           <p>
+            <Link href="/auth/reset-password" className="font-semibold text-primary hover:underline underline-offset-4">
+              Forgot password?
+            </Link>
+          </p>
+          <p>
             Admin?{' '}
-            <Link
-              href="/admin/login"
-              className="font-semibold text-red-600 hover:text-red-500 underline-offset-4 hover:underline"
-            >
+            <Link href="/admin/login" className="font-semibold text-red-600 hover:text-red-500 underline-offset-4 hover:underline">
               Go to admin panel
             </Link>
           </p>

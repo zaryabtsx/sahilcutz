@@ -11,7 +11,7 @@ import {
   useMotionValueEvent,
 } from "motion/react";
 import { ThemeToggle } from "./ThemeToggle";
-import { getSession, clearSession, isAdminAuthenticated, clearAdminToken } from "@/lib/auth";
+import { getSession, clearSession, getAdminToken, clearAdminToken } from "@/lib/auth";
 import type { AuthSession } from "@/lib/types";
 
 export function Navbar() {
@@ -31,7 +31,9 @@ export function Navbar() {
     // Check session on component mount
     const userSession = getSession();
     setSession(userSession);
-    setIsAdmin(isAdminAuthenticated());
+    // Check if user is admin by checking session role or admin token
+    const adminStatus = userSession?.user.role === 'admin' || getAdminToken() === 'admin_verified';
+    setIsAdmin(adminStatus);
   }, []);
 
   // Lock body scroll when mobile menu is open

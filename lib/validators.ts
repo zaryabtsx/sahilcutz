@@ -1,22 +1,19 @@
+// lib/validators.ts  ← this file is still missing, create it
 import { z } from 'zod';
 
 export const loginSchema = z.object({
   email: z.string().email('Enter a valid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(6, 'At least 6 characters'),
 });
 
-export const signupSchema = loginSchema.extend({
-  full_name: z.string().min(2, 'Full name is required'),
-  phone: z.string().min(8, 'Phone number is required'),
+export const signupSchema = z.object({
+  full_name: z.string().min(2, 'Enter your full name'),
+  email: z.string().email('Enter a valid email'),
+  phone: z.string().min(10, 'Enter a valid phone number'),
+  password: z.string().min(6, 'At least 6 characters'),
   role: z.enum(['customer', 'barber']),
 });
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email('Enter a valid email'),
-});
-
-export const customerDetailsSchema = z.object({
-  fullName: z.string().min(2, 'Full name is required'),
-  email: z.string().email('Enter a valid email'),
-  phone: z.string().min(8, 'Phone number is required'),
 });
