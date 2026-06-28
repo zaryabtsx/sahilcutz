@@ -5,13 +5,16 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { isAuthenticated, getSession } from '@/lib/auth';
+import { initialServices } from '@/lib/mockData';
+import { getServiceCategoryName, sortCategoryEntries } from '@/lib/serviceCategories';
+import type { UserProfile } from '@/lib/types';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Loader2,
-  Clock, Scissors, Calendar, ChevronLeft, ChevronRight,
+  Clock, Scissors, Calendar, ChevronDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -22,6 +25,7 @@ interface Service {
   duration_minutes: number;
   price: number;
   description: string | null;
+  category: string | null;
   is_active: boolean;
 }
 
@@ -47,7 +51,8 @@ interface Barber {
 
 interface BookedAppt {
   barber_id: string;
-  appointment_time: string;
+  start_at: string;
+  end_at: string;
   duration_minutes: number;
   status: string;
 }
@@ -75,6 +80,57 @@ function isoDate(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
+function timeFromTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`;
+  }
+
+  return value.match(/T(\d{2}:\d{2})/)?.[1] ?? '00:00';
+}
+
+function normalizeServiceToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+const SERVICE_TOKEN_ALIASES: Record<string, string[]> = {
+  servicehaircut: ['haircut', 'classichaircut'],
+  serviceskinfade: ['skinfade', 'haircut'],
+  servicetaperfade: ['taperfade', 'haircut'],
+  servicekidscut: ['kidscut'],
+  servicebeard: ['beardtrim'],
+  servicebeardshape: ['beardshapeup', 'beardtrim'],
+  servicehottowelshave: ['hottowelshave'],
+  servicecombo: ['hairbeardcombo'],
+  servicepremiumcombo: ['premiumgroomingcombo', 'hairbeardcombo'],
+  servicefacial: ['facial'],
+  servicehaircolor: ['haircoloring'],
+  servicewashstyle: ['washstyle'],
+  servicegreyblending: ['greyblending'],
+  servicehighlights: ['highlights'],
+  servicefullcolor: ['fullcolor'],
+};
+
+function findServiceByToken(token: string, serviceList: Service[]): Service | undefined {
+  const normalizedToken = normalizeServiceToken(token);
+  const tokenWithoutPrefix = normalizedToken.replace(/^service/, '');
+  const candidates = [
+    normalizedToken,
+    tokenWithoutPrefix,
+    ...(SERVICE_TOKEN_ALIASES[normalizedToken] ?? []),
+  ].filter(Boolean);
+
+  return serviceList.find((service) => {
+    const normalizedId = normalizeServiceToken(service.id);
+    const normalizedName = normalizeServiceToken(service.name);
+
+    return candidates.some((candidate) =>
+      normalizedId === candidate ||
+      normalizedName === candidate,
+    );
+  });
+}
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -94,8 +150,8 @@ function computeAvailableSlots(
   const blockedRanges = booked
     .filter(b => b.barber_id === barberId && !['Cancelled', 'cancelled'].includes(b.status))
     .map(b => ({
-      from: timeToMins(b.appointment_time),
-      to:   timeToMins(b.appointment_time) + b.duration_minutes,
+      from: timeToMins(timeFromTimestamp(b.start_at)),
+      to:   timeToMins(timeFromTimestamp(b.end_at)),
     }));
 
   const nowMins =
@@ -129,7 +185,7 @@ function computeAvailableSlots(
 // ── Step indicator ────────────────────────────────────────────
 
 function Steps({ current }: { current: number }) {
-  const steps = ['Service', 'Date & Time', 'Confirm'];
+  const steps = ['Services', 'Date & Time', 'Confirm'];
   return (
     <div className="flex items-center gap-2">
       {steps.map((s, i) => (
@@ -153,9 +209,11 @@ function Steps({ current }: { current: number }) {
 
 export default function BookingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [ready, setReady]     = useState(false);
-  const [user, setUser]       = useState<any>(null);
+  const [user, setUser]       = useState<UserProfile | null>(null);
+  const [customerPhone, setCustomerPhone] = useState('');
   const [loading, setLoading] = useState(true);
 
   const [services, setServices] = useState<Service[]>([]);
@@ -166,14 +224,15 @@ export default function BookingPage() {
 
   const [step, setStep] = useState(0);
 
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedServices, setSelectedServices] = useState<Service[]>([]);
+  const [openCategories, setOpenCategories] = useState<string[]>([]);
   const [selectedDate, setSelectedDate]       = useState<string>(isoDate(new Date()));
   const [selectedSlot, setSelectedSlot]       = useState<ComputedSlot | null>(null);
   const [selectedBarber, setSelectedBarber]   = useState<string>('');
 
   // ── Confirmed booking snapshot — persists after slot state resets ──
   const [confirmedSlot, setConfirmedSlot]       = useState<ComputedSlot | null>(null);
-  const [confirmedService, setConfirmedService] = useState<Service | null>(null);
+  const [confirmedServices, setConfirmedServices] = useState<Service[]>([]);
   const [confirmedDate, setConfirmedDate]       = useState<string>('');
   const [confirmedBarberName, setConfirmedBarberName] = useState<string>('');
 
@@ -185,12 +244,42 @@ export default function BookingPage() {
   const [bookingDone, setBookingDone] = useState(false);
   const [error, setError]             = useState('');
 
+  const servicesParamKey = searchParams.getAll('services').join(',');
+  const requestedServiceTokens = useMemo(
+    () => servicesParamKey.split(',').map((value) => value.trim()).filter(Boolean),
+    [servicesParamKey],
+  );
+
+  const selectedDuration = useMemo(
+    () => selectedServices.reduce((total, service) => total + Number(service.duration_minutes || 0), 0),
+    [selectedServices],
+  );
+  const selectedPrice = useMemo(
+    () => selectedServices.reduce((total, service) => total + Number(service.price || 0), 0),
+    [selectedServices],
+  );
+  const selectedServiceNames = useMemo(
+    () => selectedServices.map((service) => service.name).join(', '),
+    [selectedServices],
+  );
+  const serviceGroups = useMemo(() => {
+    const groups = services.reduce<Record<string, Service[]>>((acc, service) => {
+      const category = getServiceCategoryName(service);
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(service);
+      return acc;
+    }, {});
+
+    return sortCategoryEntries(Object.entries(groups));
+  }, [services]);
+
   // ── Auth guard ──
   useEffect(() => {
     isAuthenticated().then(ok => {
       if (!ok) { router.push('/auth/login'); return; }
       const session = getSession();
       setUser(session?.user ?? null);
+      setCustomerPhone(session?.user.phone ?? '');
       setReady(true);
     });
   }, [router]);
@@ -204,12 +293,29 @@ export default function BookingPage() {
         supabase.from('services').select('*').eq('is_active', true).order('name'),
         supabase.from('barbers').select('id, name'),
       ]);
-      setServices((svcRes.data ?? []) as Service[]);
+      const loadedServices = (svcRes.error || !svcRes.data?.length ? initialServices : svcRes.data) as Service[];
+      setServices(loadedServices);
       setBarbers((barberRes.data ?? []) as Barber[]);
+
+      const matches = requestedServiceTokens
+        .map((token) => findServiceByToken(token, loadedServices))
+        .filter((service): service is Service => Boolean(service));
+
+      const uniqueMatches = matches.filter(
+        (service, index, all) => all.findIndex((item) => item.id === service.id) === index,
+      );
+
+      if (uniqueMatches.length) {
+        setSelectedServices(uniqueMatches);
+        setOpenCategories(Array.from(new Set(uniqueMatches.map(getServiceCategoryName))));
+      } else if (loadedServices.length) {
+        setOpenCategories((current) => current.length ? current : [getServiceCategoryName(loadedServices[0])]);
+      }
+
       setLoading(false);
     };
     load();
-  }, [ready]);
+  }, [ready, requestedServiceTokens]);
 
   // ── Load availability windows + booked appts when date changes ──
   const loadSlotsForDate = useCallback(async (date: string) => {
@@ -219,8 +325,9 @@ export default function BookingPage() {
       supabase.from('slots').select('*').eq('slot_date', date).eq('is_available', true),
       supabase
         .from('appointments')
-        .select('barber_id, appointment_time, duration_minutes, status')
-        .eq('appointment_date', date)
+        .select('barber_id, start_at, end_at, duration_minutes, status')
+        .gte('start_at', `${date}T00:00:00`)
+        .lt('start_at', `${date}T23:59:59`)
         .not('status', 'in', '("Cancelled","cancelled")'),
     ]);
     setWindows((winRes.data ?? []) as AvailWindow[]);
@@ -230,18 +337,18 @@ export default function BookingPage() {
 
   useEffect(() => {
     if (!ready || !selectedDate) return;
-    loadSlotsForDate(selectedDate);
+    void Promise.resolve().then(() => loadSlotsForDate(selectedDate));
   }, [ready, selectedDate, loadSlotsForDate]);
 
   // ── Compute available slots ──
   const allComputedSlots = useMemo((): ComputedSlot[] => {
-    if (!selectedService || !barbers.length) return [];
+    if (!selectedServices.length || !selectedDuration || !barbers.length) return [];
     const result: ComputedSlot[] = [];
     barbers.forEach(barber => {
-      result.push(...computeAvailableSlots(windows, booked, selectedService.duration_minutes, barber.id, selectedDate));
+      result.push(...computeAvailableSlots(windows, booked, selectedDuration, barber.id, selectedDate));
     });
     return result.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.barber_id.localeCompare(b.barber_id));
-  }, [selectedService, windows, booked, barbers, selectedDate]);
+  }, [selectedServices.length, selectedDuration, windows, booked, barbers, selectedDate]);
 
   const visibleSlots = useMemo(() => {
     if (!selectedBarber) return allComputedSlots;
@@ -274,34 +381,64 @@ export default function BookingPage() {
     setSelectedSlot(null);
   };
 
+  const toggleSelectedService = (svc: Service) => {
+    setSelectedServices((current) => {
+      const exists = current.some((service) => service.id === svc.id);
+      return exists ? current.filter((service) => service.id !== svc.id) : [...current, svc];
+    });
+    setSelectedSlot(null);
+  };
+
+  const toggleCategory = (category: string) => {
+    setOpenCategories((current) =>
+      current.includes(category)
+        ? current.filter((item) => item !== category)
+        : [...current, category],
+    );
+  };
+
   // ── Submit booking ──
   const submitBooking = async () => {
-    if (!selectedService || !selectedSlot || !user) return;
+    if (!selectedServices.length || !selectedSlot || !user) return;
     setError('');
+    if (!customerPhone.trim()) {
+      setError('Please enter your phone number so the barber can contact you about this booking.');
+      return;
+    }
     setSubmitting(true);
 
     // Snapshot before loadSlotsForDate resets selectedSlot to null
     const bookedSlot        = selectedSlot;
-    const bookedService     = selectedService;
+    const bookedServices    = selectedServices;
+    const primaryService    = bookedServices[0];
+    const bookedDuration    = bookedServices.reduce((total, service) => total + Number(service.duration_minutes || 0), 0);
     const bookedDate        = selectedDate;
     const bookedBarberName  = barbers.find(b => b.id === selectedSlot.barber_id)?.name ?? '—';
+    const startAt           = new Date(`${bookedDate}T${bookedSlot.start_time}:00`).toISOString();
+    const endAt             = new Date(`${bookedDate}T${bookedSlot.end_time}:00`).toISOString();
 
     try {
-      const { data: authUser } = await supabase.auth.getUser();
-      const uid = authUser?.user?.id ?? user?.id;
+      const uid = user.id;
+
+      const { error: profileErr } = await supabase.from('profiles').upsert({
+        id: uid,
+        full_name: user.full_name || user.email || 'Customer',
+        email: user.email,
+        phone: customerPhone.trim(),
+      }, { onConflict: 'id' });
+
+      if (profileErr) {
+        console.warn('Unable to sync booking profile:', profileErr.message);
+      }
 
       const { error: apptErr } = await supabase.from('appointments').insert({
         user_id:          uid,
-        customer_name:    user.user_metadata?.full_name ?? user.email ?? 'Customer',
-        service_name:     bookedService.name,
-        service_id:       bookedService.id,
-        appointment_date: bookedDate,
-        appointment_time: bookedSlot.start_time,
-        start_at:         `${bookedDate}T${bookedSlot.start_time}:00`,
-        end_at:           `${bookedDate}T${bookedSlot.end_time}:00`,
-        duration_minutes: bookedService.duration_minutes,
+        service_id:       primaryService.id,
+        start_at:         startAt,
+        end_at:           endAt,
+        duration_minutes: bookedDuration,
         barber_id:        bookedSlot.barber_id,
-        revenue:          bookedService.price,
+        is_emergency:     false,
         status:           'Upcoming',
       });
       if (apptErr) throw apptErr;
@@ -311,12 +448,12 @@ export default function BookingPage() {
 
       // Persist confirmed details for the success screen
       setConfirmedSlot(bookedSlot);
-      setConfirmedService(bookedService);
+      setConfirmedServices(bookedServices);
       setConfirmedDate(bookedDate);
       setConfirmedBarberName(bookedBarberName);
       setBookingDone(true);
-    } catch (err: any) {
-      setError(err.message ?? 'Something went wrong. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -325,11 +462,11 @@ export default function BookingPage() {
   const resetBooking = () => {
     setBookingDone(false);
     setStep(0);
-    setSelectedService(null);
+    setSelectedServices([]);
     setSelectedSlot(null);
     setSelectedBarber('');
     setConfirmedSlot(null);
-    setConfirmedService(null);
+    setConfirmedServices([]);
     setConfirmedDate('');
     setConfirmedBarberName('');
     setError('');
@@ -357,8 +494,10 @@ export default function BookingPage() {
         <h1 className="text-3xl font-black text-foreground">Booking confirmed!</h1>
 
         <p className="mt-3 text-muted-foreground">
-          Your{' '}
-          <span className="font-semibold text-foreground">{confirmedService?.name}</span>{' '}
+          Your booking for{' '}
+          <span className="font-semibold text-foreground">
+            {confirmedServices.map(service => service.name).join(', ')}
+          </span>{' '}
           appointment is booked for{' '}
           <span className="font-semibold text-foreground">
             {fmtTime12(confirmedSlot?.start_time ?? '')}
@@ -378,9 +517,9 @@ export default function BookingPage() {
         {/* Summary card */}
         <div className="mt-6 rounded-3xl border border-border bg-background/90 px-6 py-4 text-left space-y-3">
           {[
-            { label: 'Service',  value: confirmedService?.name ?? '—' },
-            { label: 'Duration', value: confirmedService ? `${confirmedService.duration_minutes} min` : '—' },
-            { label: 'Price',    value: confirmedService ? `PKR ${Number(confirmedService.price).toLocaleString()}` : '—' },
+            { label: 'Services', value: confirmedServices.length ? confirmedServices.map(service => service.name).join(', ') : '—' },
+            { label: 'Duration', value: confirmedServices.length ? `${confirmedServices.reduce((total, service) => total + Number(service.duration_minutes || 0), 0)} min` : '—' },
+            { label: 'Price',    value: confirmedServices.length ? `PKR ${confirmedServices.reduce((total, service) => total + Number(service.price || 0), 0).toLocaleString()}` : '—' },
             {
               label: 'Time',
               value: confirmedSlot
@@ -449,50 +588,118 @@ export default function BookingPage() {
               <motion.div key="step0" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
                 <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
                   <p className="text-xs uppercase tracking-[0.35em] text-primary">Step 1</p>
-                  <h2 className="mt-3 text-2xl font-black text-foreground">Choose a service</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Select what you'd like done today.</p>
+                  <h2 className="mt-3 text-2xl font-black text-foreground">Choose services</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Select one or more services for this appointment.</p>
 
-                  <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                    {services.map(svc => (
-                      <button
-                        key={svc.id}
-                        onClick={() => setSelectedService(svc)}
-                        className={`rounded-3xl border p-5 text-left transition-all hover:border-primary/50 ${
-                          selectedService?.id === svc.id
-                            ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10'
-                            : 'border-border bg-background/90'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <Scissors className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                            <p className="font-bold text-foreground">{svc.name}</p>
-                          </div>
-                          {selectedService?.id === svc.id && <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />}
+                  <div className="mt-8 space-y-7">
+                    {serviceGroups.map(([category, categoryServices]) => {
+                      const isOpen = openCategories.includes(category);
+                      const selectedInCategory = categoryServices.filter((svc) =>
+                        selectedServices.some((service) => service.id === svc.id),
+                      ).length;
+
+                      return (
+                        <div key={category} className="rounded-3xl border border-border bg-background/70 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => toggleCategory(category)}
+                            className="w-full p-5 text-left transition-colors hover:bg-background/90"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                                  <Scissors className="h-4 w-4" />
+                                </span>
+                                <div>
+                                  <p className="font-black text-foreground">{category}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {categoryServices.length} service{categoryServices.length === 1 ? '' : 's'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {selectedInCategory > 0 && (
+                                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                                    {selectedInCategory} selected
+                                  </span>
+                                )}
+                                <ChevronDown className={`h-5 w-5 text-primary transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                              </div>
+                            </div>
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isOpen && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.22 }}
+                                className="overflow-hidden border-t border-border"
+                              >
+                                <div className="grid gap-4 p-5 sm:grid-cols-2">
+                                  {categoryServices.map(svc => {
+                                    const isSelected = selectedServices.some(service => service.id === svc.id);
+
+                                    return (
+                                      <button
+                                        key={svc.id}
+                                        onClick={() => toggleSelectedService(svc)}
+                                        className={`rounded-3xl border p-5 text-left transition-colors ${
+                                          isSelected
+                                            ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10'
+                                            : 'border-border bg-card'
+                                        }`}
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex items-center gap-2">
+                                            <Scissors className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                                            <p className="font-bold text-foreground">{svc.name}</p>
+                                          </div>
+                                          {isSelected && <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />}
+                                        </div>
+                                        {svc.description && <p className="mt-2 text-xs text-muted-foreground">{svc.description}</p>}
+                                        <div className="mt-4 flex items-center gap-4 text-sm">
+                                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                            <Clock className="w-3.5 h-3.5" /> {svc.duration_minutes} min
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 font-bold text-primary">
+                                            PKR {Number(svc.price).toLocaleString()}
+                                          </span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
-                        {svc.description && <p className="mt-2 text-xs text-muted-foreground">{svc.description}</p>}
-                        <div className="mt-4 flex items-center gap-4 text-sm">
-                          <span className="inline-flex items-center gap-1 text-muted-foreground">
-                            <Clock className="w-3.5 h-3.5" /> {svc.duration_minutes} min
-                          </span>
-                          <span className="inline-flex items-center gap-1 font-bold text-primary">
-                            PKR {Number(svc.price).toLocaleString()}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                      );
+                    })}
 
                     {services.length === 0 && (
-                      <div className="col-span-2 rounded-3xl border border-border bg-background/90 p-8 text-center text-sm text-muted-foreground">
+                      <div className="rounded-3xl border border-border bg-background/90 p-8 text-center text-sm text-muted-foreground">
                         No services available right now.
                       </div>
                     )}
                   </div>
 
+                  {selectedServices.length > 0 && (
+                    <div className="mt-6 rounded-3xl border border-primary/20 bg-primary/5 px-5 py-4">
+                      <p className="text-xs uppercase tracking-[0.25em] text-primary">Selected</p>
+                      <p className="mt-2 text-sm font-bold text-foreground">{selectedServiceNames}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {selectedDuration} min · PKR {selectedPrice.toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="mt-8 flex justify-end">
                     <button
-                      onClick={() => selectedService && setStep(1)}
-                      disabled={!selectedService}
+                      onClick={() => selectedServices.length && setStep(1)}
+                      disabled={!selectedServices.length}
                       className="inline-flex items-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40 transition-all"
                     >
                       Continue <ArrowRight className="w-4 h-4" />
@@ -570,9 +777,9 @@ export default function BookingPage() {
                         <p className="text-xs uppercase tracking-[0.35em] text-primary">Available times</p>
                         <h2 className="mt-3 text-2xl font-black text-foreground">Choose a time</h2>
                       </div>
-                      {selectedService && (
+                      {selectedServices.length > 0 && (
                         <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary whitespace-nowrap">
-                          {selectedService.duration_minutes} min
+                          {selectedDuration} min
                         </span>
                       )}
                     </div>
@@ -655,9 +862,8 @@ export default function BookingPage() {
                 </div>
               </motion.div>
             )}
-
             {/* ══ Step 2 — Confirm ══ */}
-            {step === 2 && selectedService && selectedSlot && (
+            {step === 2 && selectedServices.length > 0 && selectedSlot && (
               <motion.div key="step2" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
                 <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
                   <p className="text-xs uppercase tracking-[0.35em] text-primary">Step 3</p>
@@ -666,9 +872,9 @@ export default function BookingPage() {
 
                   <div className="mt-8 space-y-3">
                     {[
-                      { label: 'Service',  value: selectedService.name },
-                      { label: 'Duration', value: `${selectedService.duration_minutes} min` },
-                      { label: 'Price',    value: `PKR ${Number(selectedService.price).toLocaleString()}` },
+                      { label: 'Services', value: selectedServiceNames },
+                      { label: 'Duration', value: `${selectedDuration} min` },
+                      { label: 'Price',    value: `PKR ${selectedPrice.toLocaleString()}` },
                       {
                         label: 'Date',
                         value: new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', {
@@ -689,6 +895,22 @@ export default function BookingPage() {
                         <p className="font-bold text-foreground">{value}</p>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="mt-5 rounded-3xl border border-border bg-background/90 px-5 py-4">
+                    <label className="block text-xs uppercase tracking-[0.25em] text-muted-foreground">
+                      Phone number
+                    </label>
+                    <input
+                      type="tel"
+                      value={customerPhone}
+                      onChange={event => setCustomerPhone(event.target.value)}
+                      placeholder="+92 300 000 0000"
+                      className="mt-3 w-full bg-transparent text-sm font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                    />
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      This number will show to admin with your booking.
+                    </p>
                   </div>
 
                   {error && (

@@ -1,9 +1,11 @@
-// lib/auth.ts  ← fix this one import line
-import { supabase, hasSupabaseConfig } from './supabase';  // ✅ not supabaseClient
+// lib/auth.ts
+import { supabase, hasSupabaseConfig } from './supabase';
 import type { AuthSession, UserProfile, UserRole } from './types';
+import Cookies from 'js-cookie';   // ← Added for better persistence
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SESSION_KEY = 'sahilcutzz_session';
+const ADMIN_TOKEN_COOKIE = 'admin_token';
 
 export const ADMIN_CREDENTIALS = {
   email: 'admin@sahilcutzz.com',
@@ -16,6 +18,9 @@ export const ADMIN_CREDENTIALS = {
 function isBrowser() {
   return typeof window !== 'undefined';
 }
+
+// ─── Cookie Options ───────────────────────────────────────────────────────────
+const COOKIE_OPTIONS = { expires: 7, path: '/' }; // 7 days
 
 // ─── Session Helpers ──────────────────────────────────────────────────────────
 export function getSession(): AuthSession | null {
@@ -39,9 +44,30 @@ export function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
+// ─── Admin Token Helpers (Improved with Cookies) ─────────────────────────────
+export function setAdminToken(token: string): void {
+  if (!isBrowser()) return;
+  localStorage.setItem('adminToken', token);
+  Cookies.set(ADMIN_TOKEN_COOKIE, token, COOKIE_OPTIONS);
+}
+
+export function getAdminToken(): string | null {
+  if (!isBrowser()) return null;
+
+  // Prefer cookie (more reliable across browsers/profiles)
+  const cookieToken = Cookies.get(ADMIN_TOKEN_COOKIE);
+  if (cookieToken) return cookieToken;
+
+  return localStorage.getItem('adminToken');
+}
+
+export function clearAdminToken(): void {
+  if (!isBrowser()) return;
+  localStorage.removeItem('adminToken');
+  Cookies.remove(ADMIN_TOKEN_COOKIE);
+}
+
 // ─── Re-hydrate custom session from Supabase ─────────────────────────────────
-// Called on every page load to rebuild sahilcutzz_session from Supabase's
-// own persisted session (sb-xxx-auth-token in localStorage).
 async function rehydrateFromSupabase(): Promise<boolean> {
   try {
     const { data } = await supabase.auth.getSession();
@@ -84,6 +110,7 @@ export async function isAdminAuthenticated(): Promise<boolean> {
   const session = getSession();
   if (session?.user.role === 'admin') return true;
   if (getAdminToken() === 'admin_verified') return true;
+
   const ok = await rehydrateFromSupabase();
   if (ok) {
     const s = getSession();
@@ -99,23 +126,25 @@ export function validateAdminCredentials(email: string, password: string): boole
   );
 }
 
-export function setAdminToken(token: string): void {
-  if (isBrowser()) localStorage.setItem('adminToken', token);
-}
-
-export function getAdminToken(): string | null {
-  if (!isBrowser()) return null;
-  return localStorage.getItem('adminToken');
-}
-
-export function clearAdminToken(): void {
-  if (isBrowser()) localStorage.removeItem('adminToken');
-}
-
 export function adminLogout(): void {
   clearSession();
   clearAdminToken();
   supabase.auth.signOut();
+}
+
+async function syncProfileFromAuth(profile: UserProfile): Promise<void> {
+  if (!hasSupabaseConfig() || !profile.id || profile.id === 'guest') return;
+
+  try {
+    await supabase.from('profiles').upsert({
+      id: profile.id,
+      full_name: profile.full_name,
+      email: profile.email,
+      phone: profile.phone,
+    }, { onConflict: 'id' });
+  } catch {
+    // Profile sync should not block auth.
+  }
 }
 
 // ─── User Sign-In ─────────────────────────────────────────────────────────────
@@ -148,29 +177,26 @@ export async function signIn(
       updated_at: new Date().toISOString(),
     };
 
+    await syncProfileFromAuth(profile);
     setSession({ user: profile, token: response.data.session.access_token });
     return { success: true, message: 'Signed in', role };
   }
 
   // 2. Hardcoded admin path (no Supabase config)
-  if (validateAdminCredentials(email, password)) {
-    const adminSession: AuthSession = {
-      token: 'admin-verified',
-      user: {
-        id: 'admin-1',
-        email,
-        phone: null,
-        role: 'admin',
-        full_name: ADMIN_CREDENTIALS.fullName,
-        favorite_barber_id: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    };
-    setSession(adminSession);
-    setAdminToken('admin_verified');
-    return { success: true, message: 'Signed in', role: 'admin' };
+ // Inside signIn function, in the hardcoded admin block:
+if (validateAdminCredentials(email, password)) {
+  // ... existing code ...
+
+  // ADD THIS:
+  if (hasSupabaseConfig()) {
+    await supabase.auth.signInWithPassword({
+      email: ADMIN_CREDENTIALS.email,
+      password: ADMIN_CREDENTIALS.password,
+    });
   }
+
+  // rest of your code...
+}
 
   // 3. Demo customer path (dev / no Supabase config)
   if (email.endsWith('@example.com') && password.length >= 6) {
@@ -214,17 +240,20 @@ export async function signUp(payload: {
     if (response.error) {
       return { success: false, message: response.error.message };
     }
+    const profile: UserProfile = {
+      id: response.data.user?.id ?? 'guest',
+      email: payload.email,
+      phone: payload.phone,
+      role: payload.role,
+      full_name: payload.fullName,
+      favorite_barber_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await syncProfileFromAuth(profile);
     setSession({
-      user: {
-        id: response.data.user?.id ?? 'guest',
-        email: payload.email,
-        phone: payload.phone,
-        role: payload.role,
-        full_name: payload.fullName,
-        favorite_barber_id: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
+      user: profile,
       token: response.data.session?.access_token ?? 'anonymous',
     });
     return { success: true, message: 'Account created' };

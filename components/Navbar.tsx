@@ -156,7 +156,7 @@ export function Navbar() {
 
               {/* Right actions */}
               <div className="flex items-center gap-3">
-                <ThemeToggle />
+                {/* <ThemeToggle /> */}
                 {session ? (
                   <>
                     <div className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/60 bg-card/50">

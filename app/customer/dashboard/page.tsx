@@ -1,21 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import { isAuthenticated, getSession, clearSession } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import type { UserProfile } from '@/lib/types';
 import { Bell, Clock, Heart, ArrowRight, LogOut, Loader2 } from 'lucide-react';
-import { initialBarbers, initialNotifications, initialServices } from '@/lib/mockData';
+import { initialBarbers, initialNotifications } from '@/lib/mockData';
 
 const statusStyles: Record<string, string> = {
+  upcoming:   'bg-primary/10 text-primary',
   confirmed:  'bg-primary/10 text-primary',
   pending:    'bg-accent/10 text-accent',
   completed:  'bg-muted/10 text-muted-foreground',
   cancelled:  'bg-destructive/10 text-destructive',
+  expired:    'bg-muted/10 text-muted-foreground',
   emergency:  'bg-red-500/10 text-red-500',
   shifted:    'bg-yellow-500/10 text-yellow-500',
 };
+
+const ACTIVE_STATUSES = new Set(['upcoming', 'pending', 'confirmed', 'in progress']);
 
 interface AppointmentRow {
   id:               string;
@@ -23,24 +28,51 @@ interface AppointmentRow {
   barber_id:        string;
   service_id:       string;
   customer_name:    string;
-  service_name:     string;
+  service_name?:    string | null;
   appointment_date: string;
   appointment_time: string;
   start_at:         string;
   end_at:           string;
   duration_minutes: number;
-  revenue:          number;
-  status:           'confirmed' | 'completed' | 'cancelled' | 'pending';
+  revenue?:         number | null;
+  status:           string;
   created_at:       string;
+  services?:        { name: string; price: number } | null;
+  barbers?:         { name: string } | null;
+}
+
+function normalizedStatus(status?: string | null): string {
+  return (status || 'upcoming').toLowerCase();
+}
+
+function displayStatus(appt: AppointmentRow): string {
+  const status = normalizedStatus(appt.status);
+  if (status === 'completed' || status === 'cancelled') return status;
+  return new Date(appt.end_at).getTime() < Date.now() ? 'expired' : status;
+}
+
+function statusLabel(status: string): string {
+  return status.split(' ').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function serviceName(appt: AppointmentRow): string {
+  if (appt.service_id === 'service-1' || appt.service_id === 'service-haircut') return 'Hair Cut';
+  if (appt.service_id === 'service-2' || appt.service_id === 'service-beard') return 'Beard Trim';
+  return appt.services?.name || appt.service_name || 'Service';
+}
+
+function servicePrice(appt: AppointmentRow): number | null {
+  return appt.services?.price ?? appt.revenue ?? null;
 }
 
 export default function CustomerDashboardPage() {
   const router = useRouter();
 
   const [ready, setReady]               = useState(false);
-  const [user, setUser]                 = useState<any>(null);
+  const [user, setUser]                 = useState<UserProfile | null>(null);
   const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
   const [apptLoading, setApptLoading]   = useState(true);
+  const [apptError, setApptError]       = useState('');
 
   // ── Auth guard ──────────────────────────────────────────────
   useEffect(() => {
@@ -65,25 +97,30 @@ export default function CustomerDashboardPage() {
 
     const fetchAppointments = async () => {
       setApptLoading(true);
+      setApptError('');
 
-      // Always use the real Supabase auth user id
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      const uid = authUser?.id ?? user?.id;
+      const uid = user?.id;
 
       if (!uid) {
         setApptLoading(false);
         return;
       }
 
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('user_id', uid)
-        .order('start_at', { ascending: false })
-        .limit(20);
+      try {
+        const response = await fetch(`/api/customer/appointments?userId=${encodeURIComponent(uid)}`);
+        const payload = await response.json();
 
-      if (!error && data) setAppointments(data as AppointmentRow[]);
-      setApptLoading(false);
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Unable to load appointments.');
+        }
+
+        setAppointments(payload as AppointmentRow[]);
+      } catch (err) {
+        setAppointments([]);
+        setApptError(err instanceof Error ? err.message : 'Unable to load appointments.');
+      } finally {
+        setApptLoading(false);
+      }
     };
 
     fetchAppointments();
@@ -95,8 +132,18 @@ export default function CustomerDashboardPage() {
     router.push('/auth/login');
   };
 
-  const upcoming = appointments.filter(
-    (a) => a.status === 'pending' || a.status === 'confirmed'
+  const upcoming = useMemo(
+    () => appointments
+      .filter((appt) => ACTIVE_STATUSES.has(displayStatus(appt)))
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+    [appointments],
+  );
+
+  const past = useMemo(
+    () => appointments
+      .filter((appt) => ['completed', 'cancelled', 'expired'].includes(displayStatus(appt)))
+      .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime()),
+    [appointments],
   );
 
   const favoriteBarber       = initialBarbers[0];
@@ -212,6 +259,10 @@ export default function CustomerDashboardPage() {
                     <div className="flex items-center justify-center py-10">
                       <Loader2 className="w-6 h-6 animate-spin text-primary" />
                     </div>
+                  ) : apptError ? (
+                    <div className="rounded-3xl border border-destructive/20 bg-destructive/10 p-6 text-center text-sm text-destructive">
+                      {apptError}
+                    </div>
                   ) : upcoming.length === 0 ? (
                     <div className="rounded-3xl border border-border bg-background/90 p-6 text-center text-sm text-muted-foreground">
                       No upcoming appointments.{' '}
@@ -220,17 +271,23 @@ export default function CustomerDashboardPage() {
                       </button>
                     </div>
                   ) : (
-                    upcoming.map((appt) => (
+                    upcoming.map((appt) => {
+                      const status = displayStatus(appt);
+                      const price = servicePrice(appt);
+                      return (
                       <div key={appt.id} className="rounded-3xl border border-border bg-background/90 p-5">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <p className="text-sm text-muted-foreground">{appt.service_name ?? 'Service'}</p>
+                            <p className="text-sm text-muted-foreground">{serviceName(appt)}</p>
                             <p className="mt-1 text-xl font-bold text-foreground">
                               {new Date(appt.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                             </p>
+                            {appt.barbers?.name && (
+                              <p className="mt-1 text-xs text-muted-foreground">with {appt.barbers.name}</p>
+                            )}
                           </div>
-                          <div className={`rounded-3xl px-4 py-2 text-sm font-semibold ${statusStyles[appt.status]}`}>
-                            {appt.status}
+                          <div className={`rounded-3xl px-4 py-2 text-sm font-semibold ${statusStyles[status] ?? statusStyles.upcoming}`}>
+                            {statusLabel(status)}
                           </div>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-3 text-sm text-muted-foreground">
@@ -239,21 +296,22 @@ export default function CustomerDashboardPage() {
                           </span>
                           <span>•</span>
                           <span>{appt.duration_minutes} min</span>
-                          {appt.revenue != null && (
+                          {price != null && (
                             <>
                               <span>•</span>
-                              <span>${appt.revenue}</span>
+                              <span>PKR {Number(price).toLocaleString()}</span>
                             </>
                           )}
                         </div>
                       </div>
-                    ))
+                    );
+                    })
                   )}
                 </div>
               </div>
 
               {/* All appointments history */}
-              {appointments.filter(a => a.status === 'completed' || a.status === 'cancelled').length > 0 && (
+              {past.length > 0 && (
                 <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
                   <div className="flex items-center gap-3 text-primary mb-6">
                     <div className="rounded-3xl bg-primary/15 p-3"><Clock className="w-5 h-5" /></div>
@@ -263,19 +321,24 @@ export default function CustomerDashboardPage() {
                     </div>
                   </div>
                   <div className="space-y-4">
-                    {appointments
-                      .filter(a => a.status === 'completed' || a.status === 'cancelled')
-                      .map((appt) => (
+                    {past
+                      .map((appt) => {
+                        const status = displayStatus(appt);
+                        const price = servicePrice(appt);
+                        return (
                         <div key={appt.id} className="rounded-3xl border border-border bg-background/90 p-5">
                           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
-                              <p className="text-sm text-muted-foreground">{appt.service_name ?? 'Service'}</p>
+                              <p className="text-sm text-muted-foreground">{serviceName(appt)}</p>
                               <p className="mt-1 text-xl font-bold text-foreground">
                                 {new Date(appt.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               </p>
+                              {appt.barbers?.name && (
+                                <p className="mt-1 text-xs text-muted-foreground">with {appt.barbers.name}</p>
+                              )}
                             </div>
-                            <div className={`rounded-3xl px-4 py-2 text-sm font-semibold ${statusStyles[appt.status]}`}>
-                              {appt.status}
+                            <div className={`rounded-3xl px-4 py-2 text-sm font-semibold ${statusStyles[status] ?? statusStyles.expired}`}>
+                              {statusLabel(status)}
                             </div>
                           </div>
                           <div className="mt-4 flex flex-wrap gap-3 text-sm text-muted-foreground">
@@ -284,15 +347,16 @@ export default function CustomerDashboardPage() {
                             </span>
                             <span>•</span>
                             <span>{appt.duration_minutes} min</span>
-                            {appt.revenue != null && (
+                            {price != null && (
                               <>
                                 <span>•</span>
-                                <span>${appt.revenue}</span>
+                                <span>PKR {Number(price).toLocaleString()}</span>
                               </>
                             )}
                           </div>
                         </div>
-                      ))}
+                      );
+                      })}
                   </div>
                 </div>
               )}

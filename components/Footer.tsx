@@ -7,18 +7,17 @@ import { Scissors, MapPin, Phone, Mail, Clock, Share2, Camera, MessageCircle, Ar
 export function Footer() {
   const quickLinks = [
     { name: 'Home', href: '#home' },
-    { name: 'Services', href: '#services' },
     { name: 'About', href: '#about' },
     { name: 'Testimonials', href: '#testimonials' },
     { name: 'Contact', href: '#contact' },
   ];
 
-  const services = [
-    'Classic Haircut',
-    'Beard Trim',
-    'Hot Towel Shave',
-    'Hair Coloring',
-    'Styling',
+  const legalLinks = [
+    { name: 'About Us', href: '/about' },
+    { name: 'Contact Us', href: '/contact' },
+    { name: 'Privacy Policy', href: '/privacy-policy' },
+    { name: 'Terms & Conditions', href: '/terms-and-conditions' },
+    { name: 'Refund & Cancellation Policy', href: '/refund-policy' },
   ];
 
   const socialLinks = [
@@ -71,7 +70,7 @@ export function Footer() {
               Book Your Session Today
             </h3>
           </div>
-          <Link href="/booking-new" className="group inline-flex items-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow duration-300 no-underline">
+          <Link href="/booking" className="group inline-flex items-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow duration-300 no-underline">
             <motion.div
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
@@ -168,7 +167,7 @@ export function Footer() {
             </ul>
           </motion.div>
 
-          {/* Services */}
+          {/* Legal — required for payment gateway approval (privacy, terms, refund policy, etc.) */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -178,24 +177,24 @@ export function Footer() {
           >
             <h3 className="text-xs font-bold text-foreground uppercase tracking-widest mb-5 flex items-center gap-2">
               <span className="w-4 h-px bg-primary inline-block" />
-              Services
+              Legal
             </h3>
             <ul className="space-y-2.5">
-              {services.map((service, i) => (
+              {legalLinks.map((link, i) => (
                 <motion.li
-                  key={service}
+                  key={link.name}
                   initial={{ opacity: 0, x: -8 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.25 + i * 0.06, duration: 0.4 }}
+                  transition={{ delay: 0.3 + i * 0.06, duration: 0.4 }}
                 >
-                  <a
-                    href="#services"
-                    className="group flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors duration-200"
+                  <Link
+                    href={link.href}
+                    className="group flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors duration-200 no-underline"
                   >
                     <ChevronRight className="w-3.5 h-3.5 text-primary/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-200" />
-                    {service}
-                  </a>
+                    {link.name}
+                  </Link>
                 </motion.li>
               ))}
             </ul>
@@ -206,7 +205,7 @@ export function Footer() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ delay: 0.3, duration: 0.6 }}
+            transition={{ delay: 0.25, duration: 0.6 }}
             className="space-y-4"
           >
             <h3 className="text-xs font-bold text-foreground uppercase tracking-widest mb-5 flex items-center gap-2">

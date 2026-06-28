@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
@@ -16,8 +15,8 @@ import {
 import {
   LogOut, Users, Calendar, BarChart3, ShieldCheck,
   AlertTriangle, X, Plus, CheckCircle, Loader2,
-  RefreshCw, Trash2, Edit3, Sparkles, Clock,
-  Scissors, Timer,
+  RefreshCw, Trash2, Edit3, Clock,
+  Scissors, Timer, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { getSession, getAdminToken, adminLogout } from '@/lib/auth';
 
@@ -26,10 +25,12 @@ import { getSession, getAdminToken, adminLogout } from '@/lib/auth';
 interface Appointment {
   id: string;
   customer_name: string;
+  customer_phone: string | null;
   service_name: string;
+  service_category: string;
   appointment_date: string;
   appointment_time: string;
-  status: 'Upcoming' | 'In Progress' | 'Completed' | 'Cancelled';
+  status: 'Upcoming' | 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
   barber_id: string | null;
   is_emergency?: boolean;
   revenue: number;
@@ -39,7 +40,7 @@ interface Appointment {
 
 interface Barber   { id: string; name: string; }
 interface User     { id: string; name: string; email: string; phone: string | null; created_at: string; }
-interface Service  { id: string; name: string; duration_minutes: number; price: number; description: string | null; is_active: boolean; }
+interface Service  { id: string; name: string; duration_minutes: number; price: number; description: string | null; category: string | null; is_active: boolean; }
 interface Slot     { id: string; barber_id: string; slot_date: string; start_time: string; end_time: string; is_available: boolean; barbers?: { name: string } | null; }
 
 interface EmergencyForm {
@@ -48,20 +49,19 @@ interface EmergencyForm {
   revenue: string; notes: string;
 }
 interface AvailabilityForm { barber_id: string; slot_date: string; from_time: string; to_time: string; }
-interface ServiceForm      { name: string; duration_minutes: string; price: string; description: string; }
+interface ServiceForm      { name: string; duration_minutes: string; price: string; category: string; description: string; }
 
 // ── Constants ─────────────────────────────────────────────────
 
 const PIE_COLORS = ['#d8b76b', '#f0c85a', '#b58322', '#7c6d44', '#35302a'];
-const STATUSES   = ['Upcoming', 'In Progress', 'Completed', 'Cancelled'] as const;
-const DEFAULT_SERVICES = ['Hair Cut','Beard Trim','Hot Towel Shave','Hair + Beard Combo','Facial','Kids Cut','Other'];
+const STATUSES   = ['Upcoming', 'In Progress', 'Completed', 'Cancelled', 'Expired'] as const;
 
 const STATUS_TEXT: Record<string, string> = {
-  Completed: 'text-green-400', 'In Progress': 'text-yellow-400', Upcoming: 'text-primary', Cancelled: 'text-red-400',
+  Completed: 'text-green-400', 'In Progress': 'text-yellow-400', Upcoming: 'text-primary', Cancelled: 'text-red-400', Expired: 'text-muted-foreground',
 };
 const STATUS_BG: Record<string, string> = {
   Completed: 'bg-green-400/10 border-green-400/20', 'In Progress': 'bg-yellow-400/10 border-yellow-400/20',
-  Upcoming: 'bg-primary/10 border-primary/20', Cancelled: 'bg-red-400/10 border-red-400/20',
+  Upcoming: 'bg-primary/10 border-primary/20', Cancelled: 'bg-red-400/10 border-red-400/20', Expired: 'bg-border/30 border-border',
 };
 
 const EMPTY_FORM: EmergencyForm = {
@@ -71,7 +71,8 @@ const EMPTY_FORM: EmergencyForm = {
 const EMPTY_AVAILABILITY: AvailabilityForm = {
   barber_id: '', slot_date: new Date().toISOString().split('T')[0], from_time: '09:00', to_time: '18:00',
 };
-const EMPTY_SERVICE_FORM: ServiceForm = { name: '', duration_minutes: '30', price: '', description: '' };
+const EMPTY_SERVICE_FORM: ServiceForm = { name: '', duration_minutes: '30', price: '', category: '', description: '' };
+const DEFAULT_SERVICE_CATEGORIES = ['Hair Cut', 'Beard', 'Packages', 'Care & Styling', 'Color', 'Other'];
 
 const INPUT_CLS =
   'w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm ' +
@@ -81,9 +82,45 @@ const INPUT_CLS =
 
 const fmtTime = (t: string) => t?.slice(0, 5) ?? '';
 const fmtDate = (d: string) => {
-  // fix timezone offset by appending T00:00:00
   return new Date(d + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' });
 };
+
+function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function dateTimeFromParts(date: string, time: string): Date {
+  return new Date(`${date}T${(time || '00:00').slice(0, 5)}:00`);
+}
+
+function isAppointmentExpired(appt: Appointment): boolean {
+  if (['Completed', 'Cancelled', 'Expired'].includes(appt.status)) return false;
+  return dateTimeFromParts(appt.appointment_date, appt.appointment_time).getTime() < Date.now();
+}
+
+function appointmentDisplayStatus(appt: Appointment): Appointment['status'] {
+  return isAppointmentExpired(appt) ? 'Expired' : appt.status;
+}
+
+function isSlotExpired(slot: Slot): boolean {
+  return dateTimeFromParts(slot.slot_date, slot.end_time).getTime() < Date.now();
+}
+
+function splitStoredCustomer(value?: string | null): { name: string; phone: string | null } {
+  const text = value?.trim();
+  if (!text) return { name: '', phone: null };
+
+  const match = text.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  if (!match) return { name: text, phone: null };
+
+  return {
+    name: match[1].trim(),
+    phone: match[2].trim(),
+  };
+}
 
 function windowCapacity(fromTime: string, toTime: string, durationMins: number): number {
   if (!fromTime || !toTime || !durationMins) return 0;
@@ -132,12 +169,13 @@ export default function AdminDashboardPage() {
   const [dateFilter, setDateFilter]     = useState('');
   const [search, setSearch]             = useState('');
   const [slotBarberFilter, setSlotBarberFilter] = useState('All');
-  const [slotDateFilter, setSlotDateFilter]     = useState('');
+  const [slotDateFilter, setSlotDateFilter]     = useState(localDateKey());
 
   const [showModal, setShowModal]   = useState(false);
   const [form, setForm]             = useState<EmergencyForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError]   = useState('');
+  const [emergencyNotice, setEmergencyNotice] = useState('');
 
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [availForm, setAvailForm]       = useState<AvailabilityForm>(EMPTY_AVAILABILITY);
@@ -149,64 +187,66 @@ export default function AdminDashboardPage() {
   const [serviceSubmitting, setServiceSubmitting] = useState(false);
   const [serviceError, setServiceError]           = useState('');
   const [editingServiceId, setEditingServiceId]   = useState<string | null>(null);
+  const [categoryForm, setCategoryForm]           = useState({ serviceId: '', category: '' });
+  const [categorySavingId, setCategorySavingId]   = useState<string | null>(null);
+  const [categoryError, setCategoryError]         = useState('');
   const [editingId, setEditingId]                 = useState<string | null>(null);
+  const [appointmentPage, setAppointmentPage]     = useState(1);
+  const [customerPage, setCustomerPage]           = useState(1);
 
   // ── Auth guard ──
   useEffect(() => {
     const session = getSession();
     const isAdmin = session?.user.role === 'admin' || getAdminToken() === 'admin_verified';
-    if (!isAdmin) { 
-      router.push('/admin/login'); 
-      return; 
+    if (!isAdmin) {
+      router.push('/admin/login');
+      return;
     }
-    setReady(true);
+    void Promise.resolve().then(() => setReady(true));
   }, [router]);
 
-  // ── Data fetch — get appointments with proper joins ──
+  // ── Data fetch ──
   const fetchAll = async () => {
     setFetching(true);
     try {
       const [appointmentsRes, barberRows, usersRes, slotRows, serviceRows] = await Promise.all([
-        // Fetch all appointments
-        supabase
-          .from('appointments')
-          .select('*')
-          .order('start_at', { ascending: false }),
+        supabase.from('appointments').select('*').order('start_at', { ascending: false }),
         supabase.from('barbers').select('id, name'),
-        // Use `profiles` table (frontend stores user profile details here)
         supabase.from('profiles').select('id, full_name, email, phone, created_at'),
-        supabase
-          .from('slots')
-          .select('id, barber_id, slot_date, start_time, end_time, is_available')
-          .order('slot_date', { ascending: true })
-          .order('start_time', { ascending: true }),
-        supabase.from('services').select('*').order('name', { ascending: true }),
+        supabase.from('slots').select('*').order('slot_date').order('start_time'),
+        supabase.from('services').select('*').order('name'),
       ]);
 
-      const barberList = (barberRows.data ?? []) as Barber[];
-      const usersList = (usersRes.data ?? []) as User[];
+      const barberList   = (barberRows.data ?? []) as Barber[];
+      const usersList    = (usersRes.data ?? []) as any[];
       const servicesList = (serviceRows.data ?? []) as Service[];
-      
+
       setBarbers(barberList);
 
-      // Transform appointments to match dashboard interface
+      // Transform appointments
       const apptData = (appointmentsRes.data ?? []).map((a: any) => {
         const startDate = new Date(a.start_at);
-        const user = usersList.find(u => u.id === a.user_id);
-        const service = servicesList.find(s => s.id === a.service_id);
-        
+        const user      = usersList.find((u: any) => u.id === a.user_id);
+        const service   = servicesList.find((s: any) => s.id === a.service_id);
+        const storedCustomer = splitStoredCustomer(a.customer_name);
+        const profileName = user?.full_name || user?.name;
+        const profilePhone = user?.phone ?? null;
         return {
           id: a.id,
-          customer_name: (user as any)?.full_name || (user as any)?.name || 'Unknown User',
-          service_name: service?.name || 'Unknown Service',
+          customer_name:    profileName || storedCustomer.name || a.customer_email || 'Unknown User',
+          customer_phone:   profilePhone || a.customer_phone || storedCustomer.phone || null,
+          service_name:     service?.name || a.service_name || 'Unknown Service',
+          service_category: service?.category || 'Other',
           appointment_date: startDate.toISOString().split('T')[0],
           appointment_time: startDate.toTimeString().slice(0, 5),
-          status: a.status,
-          barber_id: a.barber_id,
-          is_emergency: a.is_emergency ?? false,
-          revenue: service?.price || 0,
-          notes: a.notes,
-          barbers: a.barber_id ? { name: barberList.find(b => b.id === a.barber_id)?.name ?? '' } : null,
+          status:           a.status,
+          barber_id:        a.barber_id,
+          is_emergency:     a.is_emergency ?? false,
+          revenue:          service?.price || 0,
+          notes:            a.notes,
+          barbers: a.barber_id
+            ? { name: barberList.find((b: any) => b.id === a.barber_id)?.name ?? '' }
+            : null,
         };
       }) as Appointment[];
 
@@ -216,7 +256,7 @@ export default function AdminDashboardPage() {
       const slotData = (slotRows.data ?? []).map((s: any) => ({
         ...s,
         barbers: s.barber_id
-          ? { name: barberList.find(b => b.id === s.barber_id)?.name ?? '' }
+          ? { name: barberList.find((b: any) => b.id === s.barber_id)?.name ?? '' }
           : null,
       })) as Slot[];
 
@@ -224,12 +264,12 @@ export default function AdminDashboardPage() {
       setServices((serviceRows.data ?? []) as Service[]);
       setUsers(
         (usersRes.data ?? []).map((p: any) => ({
-          id: p.id, 
-          name: p.full_name, 
-          email: p.email, 
-          phone: p.phone, 
+          id:         p.id,
+          name:       p.full_name,
+          email:      p.email,
+          phone:      p.phone,
           created_at: p.created_at,
-        }))
+        })).sort((a: User, b: User) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       );
     } catch (err) {
       console.error('fetchAll error:', err);
@@ -238,24 +278,17 @@ export default function AdminDashboardPage() {
     }
   };
 
-  useEffect(() => { if (!ready) return; fetchAll(); }, [ready]);
+  useEffect(() => { if (!ready) return; void Promise.resolve().then(() => fetchAll()); }, [ready]);
 
-  // ── Real-time subscription — new appointments appear instantly ──
+  // ── Real-time subscription ──
   useEffect(() => {
     if (!ready) return;
-
     const channel = supabase
       .channel('appointments-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments' },
-        (payload) => {
-          // Re-fetch all data on any change to ensure consistency
-          fetchAll();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+        fetchAll();
+      })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [ready]);
 
@@ -280,16 +313,44 @@ export default function AdminDashboardPage() {
 
   const servicePopularity = useMemo(() => {
     const counts: Record<string, number> = {};
-    appointments.forEach(a => { counts[a.service_name] = (counts[a.service_name] ?? 0) + 1; });
+    appointments.forEach(a => { counts[a.service_category || 'Other'] = (counts[a.service_category || 'Other'] ?? 0) + 1; });
     return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 5).map(([name, value]) => ({ name, value }));
   }, [appointments]);
 
+  const serviceCategories = useMemo(() => {
+    const categorySet = new Set(DEFAULT_SERVICE_CATEGORIES);
+    services.forEach(service => {
+      const category = service.category?.trim();
+      if (category) categorySet.add(category);
+    });
+    return Array.from(categorySet).sort((a, b) => {
+      const aIndex = DEFAULT_SERVICE_CATEGORIES.indexOf(a);
+      const bIndex = DEFAULT_SERVICE_CATEGORIES.indexOf(b);
+      if (aIndex !== -1 || bIndex !== -1) {
+        return (aIndex === -1 ? DEFAULT_SERVICE_CATEGORIES.length : aIndex) -
+          (bIndex === -1 ? DEFAULT_SERVICE_CATEGORIES.length : bIndex);
+      }
+      return a.localeCompare(b);
+    });
+  }, [services]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
+    const today = localDateKey();
     return appointments.filter(a => {
-      if (statusFilter !== 'All' && a.status !== statusFilter) return false;
-      if (dateFilter && a.appointment_date !== dateFilter)     return false;
-      if (q && !a.customer_name?.toLowerCase().includes(q) && !a.service_name?.toLowerCase().includes(q)) return false;
+      const status = appointmentDisplayStatus(a);
+      if (statusFilter !== 'All' && status !== statusFilter) return false;
+      if (dateFilter) {
+        if (a.appointment_date !== dateFilter) return false;
+      } else if (a.appointment_date > today) {
+        return false;
+      }
+      if (
+        q &&
+        !a.customer_name?.toLowerCase().includes(q) &&
+        !a.customer_phone?.toLowerCase().includes(q) &&
+        !a.service_name?.toLowerCase().includes(q)
+      ) return false;
       return true;
     });
   }, [appointments, statusFilter, dateFilter, search]);
@@ -297,9 +358,43 @@ export default function AdminDashboardPage() {
   const filteredSlots = useMemo(() =>
     slots.filter(s => {
       if (slotBarberFilter !== 'All' && s.barber_id !== slotBarberFilter) return false;
-      if (slotDateFilter && s.slot_date !== slotDateFilter) return false;
+      if (s.slot_date !== slotDateFilter) return false;
       return true;
     }), [slots, slotBarberFilter, slotDateFilter]);
+
+  const appointmentPageSize = 10;
+  const appointmentPageCount = Math.max(1, Math.ceil(filtered.length / appointmentPageSize));
+  const safeAppointmentPage = Math.min(appointmentPage, appointmentPageCount);
+  const paginatedAppointments = useMemo(() => {
+    const start = (safeAppointmentPage - 1) * appointmentPageSize;
+    return filtered.slice(start, start + appointmentPageSize);
+  }, [filtered, safeAppointmentPage]);
+
+  const customerPageSize = 10;
+  const customerPageCount = Math.max(1, Math.ceil(users.length / customerPageSize));
+  const safeCustomerPage = Math.min(customerPage, customerPageCount);
+  const paginatedUsers = useMemo(() => {
+    const start = (safeCustomerPage - 1) * customerPageSize;
+    return users.slice(start, start + customerPageSize);
+  }, [users, safeCustomerPage]);
+
+  const emergencyConflicts = useMemo(() => {
+    const matchedService = services.find(service => service.name === form.service_name);
+    if (!form.appointment_date || !form.appointment_time || !matchedService) return [];
+
+    const start = dateTimeFromParts(form.appointment_date, form.appointment_time).getTime();
+    const end = start + Number(matchedService.duration_minutes || 30) * 60000;
+
+    return appointments.filter(appt => {
+      if (appt.appointment_date !== form.appointment_date) return false;
+      if (form.barber_id && appt.barber_id !== form.barber_id) return false;
+      if (['Cancelled', 'Expired'].includes(appointmentDisplayStatus(appt))) return false;
+
+      const apptStart = dateTimeFromParts(appt.appointment_date, appt.appointment_time).getTime();
+      const apptEnd = apptStart + Number(services.find(service => service.name === appt.service_name)?.duration_minutes ?? 30) * 60000;
+      return start < apptEnd && end > apptStart;
+    });
+  }, [appointments, form.appointment_date, form.appointment_time, form.barber_id, form.service_name, services]);
 
   // ── Actions ──
   const updateStatus = async (id: string, status: string) => {
@@ -335,50 +430,81 @@ export default function AdminDashboardPage() {
   setFormError(''); setSubmitting(true);
   try {
     const matchedService = services.find(s => s.name === form.service_name);
-    const start_at = new Date(`${form.appointment_date}T${form.appointment_time}:00`).toISOString();
-    const duration = matchedService?.duration_minutes ?? 30;
-    const end_at = new Date(new Date(start_at).getTime() + duration * 60000).toISOString();
+    const start_at  = new Date(`${form.appointment_date}T${form.appointment_time}:00`).toISOString();
+    const duration  = matchedService?.duration_minutes ?? 30;
+    const end_at    = new Date(new Date(start_at).getTime() + duration * 60000).toISOString();
+    const overriddenAppointments = emergencyConflicts;
 
     const payload: any = {
-      customer_name: form.customer_phone
+      customer_name:     form.customer_phone
         ? `${form.customer_name.trim()} (${form.customer_phone.trim()})`
         : form.customer_name.trim(),
-      service_name: form.service_name,
-      appointment_date: form.appointment_date,
-      appointment_time: form.appointment_time,
+      service_name:      form.service_name,
+      appointment_date:  form.appointment_date,
+      appointment_time:  form.appointment_time,
       start_at,
       end_at,
-      duration_minutes: duration,
-      barber_id: form.barber_id || null,
-      service_id: matchedService?.id ?? null,
-      status: 'Upcoming',
-      revenue: parseFloat(form.revenue) || matchedService?.price || 0,
-      is_emergency: true,
+      duration_minutes:  duration,
+      barber_id:         form.barber_id || null,
+      service_id:        matchedService?.id ?? null,
+      status:            'Upcoming',
+      revenue:           parseFloat(form.revenue) || matchedService?.price || 0,
+      is_emergency:      true,
+      // ✅ notes removed — column doesn't exist in your table
     };
 
-    const { data, error } = await supabase.from('appointments').insert(payload).select().single();
-    if (error) throw error;
+    const response = await fetch('/api/admin/emergency-appointment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': getAdminToken() ?? '',
+      },
+      body: JSON.stringify({
+        appointment: payload,
+        overrideIds: overriddenAppointments.map(appt => appt.id),
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error ?? 'Unable to create emergency appointment.');
+    }
 
     const barberName = barbers.find(b => b.id === payload.barber_id)?.name ?? '';
     const newAppt: Appointment = {
-      id: data.id,
-      customer_name: payload.customer_name,
-      service_name: payload.service_name,
+      id:               result.appointment.id,
+      customer_name:    payload.customer_name,
+      customer_phone:   form.customer_phone.trim() || null,
+      service_name:     payload.service_name,
+      service_category: matchedService?.category || 'Other',
       appointment_date: payload.appointment_date,
       appointment_time: payload.appointment_time,
-      status: 'Upcoming',
-      barber_id: payload.barber_id,
-      is_emergency: true,
-      revenue: payload.revenue,
-      notes: null,
-      barbers: payload.barber_id ? { name: barberName } : null,
+      status:           'Upcoming',
+      barber_id:        payload.barber_id,
+      is_emergency:     true,
+      revenue:          payload.revenue,
+      notes:            null, // kept in UI type but not sent to DB
+      barbers:          payload.barber_id ? { name: barberName } : null,
     };
-    setAppointments(prev => [newAppt, ...prev]);
-    setForm(EMPTY_FORM); setShowModal(false);
+    const overriddenIds = new Set(overriddenAppointments.map(appt => appt.id));
+    setAppointments(prev => [
+      newAppt,
+      ...prev.map(appt => overriddenIds.has(appt.id) ? { ...appt, status: 'Cancelled' as const } : appt),
+    ]);
+    setEmergencyNotice(
+      overriddenAppointments.length
+        ? `Emergency booking created. Overrode ${overriddenAppointments.length} appointment${overriddenAppointments.length === 1 ? '' : 's'}: ${overriddenAppointments.map(appt => `${appt.customer_name}${appt.customer_phone ? ` (${appt.customer_phone})` : ''} at ${fmtTime(appt.appointment_time)}`).join(', ')}.`
+        : 'Emergency booking created. No existing appointments were overridden.',
+    );
+    setForm(EMPTY_FORM);
+    setShowModal(false);
   } catch (err: any) {
     setFormError(err.message ?? 'Something went wrong.');
-  } finally { setSubmitting(false); }
+  } finally {
+    setSubmitting(false);
+  }
 };
+
   // ── Availability ──
   const patchAvail = (patch: Partial<AvailabilityForm>) => setAvailForm(f => ({ ...f, ...patch }));
 
@@ -393,37 +519,70 @@ export default function AdminDashboardPage() {
 
     setAvailError(''); setAvailSubmitting(true);
     try {
-      const row = { barber_id: availForm.barber_id, slot_date: availForm.slot_date, start_time: availForm.from_time, end_time: availForm.to_time, is_available: true };
+      const row = {
+        barber_id:   availForm.barber_id,
+        slot_date:   availForm.slot_date,
+        start_time:  availForm.from_time,
+        end_time:    availForm.to_time,
+        is_available: true,
+      };
       const { data, error } = await supabase.from('slots').insert(row).select().single();
       if (error) throw error;
       const barberName = barbers.find(b => b.id === availForm.barber_id)?.name ?? '';
       const newSlot: Slot = { ...data, barbers: { name: barberName } };
-      setSlots(prev => [...prev, newSlot].sort((a, b) => a.slot_date.localeCompare(b.slot_date) || a.start_time.localeCompare(b.start_time)));
-      setAvailForm(EMPTY_AVAILABILITY); setShowAvailabilityModal(false);
+      setSlots(prev =>
+        [...prev, newSlot].sort((a, b) => a.slot_date.localeCompare(b.slot_date) || a.start_time.localeCompare(b.start_time))
+      );
+      setAvailForm(EMPTY_AVAILABILITY);
+      setShowAvailabilityModal(false);
     } catch (err: any) {
       setAvailError(err.message ?? 'Something went wrong.');
-    } finally { setAvailSubmitting(false); }
+    } finally {
+      setAvailSubmitting(false);
+    }
   };
 
   // ── Service CRUD ──
   const patchServiceForm = (patch: Partial<ServiceForm>) => setServiceForm(f => ({ ...f, ...patch }));
 
-  const openAddService = () => { setEditingServiceId(null); setServiceForm(EMPTY_SERVICE_FORM); setServiceError(''); setShowServiceModal(true); };
+  const openAddService = () => {
+    setEditingServiceId(null);
+    setServiceForm(EMPTY_SERVICE_FORM);
+    setServiceError('');
+    setShowServiceModal(true);
+  };
+
   const openEditService = (svc: Service) => {
     setEditingServiceId(svc.id);
-    setServiceForm({ name: svc.name, duration_minutes: String(svc.duration_minutes), price: String(svc.price), description: svc.description ?? '' });
-    setServiceError(''); setShowServiceModal(true);
+    setServiceForm({
+      name:             svc.name,
+      duration_minutes: String(svc.duration_minutes),
+      price:            String(svc.price),
+      category:         svc.category ?? '',
+      description:      svc.description ?? '',
+    });
+    setServiceError('');
+    setShowServiceModal(true);
   };
 
   const submitService = async () => {
-    if (!serviceForm.name || !serviceForm.duration_minutes || !serviceForm.price) { setServiceError('Name, duration and price are required.'); return; }
+    if (!serviceForm.name || !serviceForm.duration_minutes || !serviceForm.price) {
+      setServiceError('Name, duration and price are required.'); return;
+    }
     const dur = parseInt(serviceForm.duration_minutes);
     if (isNaN(dur) || dur < 1) { setServiceError('Duration must be at least 1 minute.'); return; }
     const price = parseFloat(serviceForm.price);
     if (isNaN(price) || price < 0) { setServiceError('Please enter a valid price.'); return; }
     setServiceError(''); setServiceSubmitting(true);
     try {
-      const payload = { name: serviceForm.name.trim(), duration_minutes: dur, price, description: serviceForm.description.trim() || null, is_active: true };
+      const payload = {
+        name:             serviceForm.name.trim(),
+        duration_minutes: dur,
+        price,
+        category:         serviceForm.category.trim() || null,
+        description:      serviceForm.description.trim() || null,
+        is_active:        true,
+      };
       if (editingServiceId) {
         const { data, error } = await supabase.from('services').update(payload).eq('id', editingServiceId).select().single();
         if (error) throw error;
@@ -434,8 +593,11 @@ export default function AdminDashboardPage() {
         setServices(prev => [...prev, data as Service].sort((a, b) => a.name.localeCompare(b.name)));
       }
       setShowServiceModal(false);
-    } catch (err: any) { setServiceError(err.message ?? 'Something went wrong.');
-    } finally { setServiceSubmitting(false); }
+    } catch (err: any) {
+      setServiceError(err.message ?? 'Something went wrong.');
+    } finally {
+      setServiceSubmitting(false);
+    }
   };
 
   const deleteService = async (id: string) => {
@@ -447,6 +609,44 @@ export default function AdminDashboardPage() {
   const toggleServiceActive = async (id: string, current: boolean) => {
     const { error } = await supabase.from('services').update({ is_active: !current }).eq('id', id);
     if (!error) setServices(prev => prev.map(s => s.id === id ? { ...s, is_active: !current } : s));
+  };
+
+  const saveServiceCategory = async (serviceId: string, category: string | null): Promise<boolean> => {
+    setCategoryError('');
+    setCategorySavingId(serviceId);
+    const normalizedCategory = category?.trim() || null;
+
+    try {
+      const { data, error } = await supabase
+        .from('services')
+        .update({ category: normalizedCategory })
+        .eq('id', serviceId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      setServices(prev => prev.map(service => service.id === serviceId ? data as Service : service));
+      return true;
+    } catch (err: any) {
+      setCategoryError(err.message ?? 'Unable to update category.');
+      return false;
+    } finally {
+      setCategorySavingId(null);
+    }
+  };
+
+  const applyCategoryToExistingService = async () => {
+    if (!categoryForm.serviceId) {
+      setCategoryError('Select an existing service first.');
+      return;
+    }
+    if (!categoryForm.category.trim()) {
+      setCategoryError('Enter or choose a category.');
+      return;
+    }
+
+    const saved = await saveServiceCategory(categoryForm.serviceId, categoryForm.category);
+    if (saved) setCategoryForm({ serviceId: '', category: '' });
   };
 
   const handleLogout = () => { adminLogout(); router.push('/admin/login'); };
@@ -476,7 +676,11 @@ export default function AdminDashboardPage() {
                 <h1 className="mt-4 text-4xl font-black text-foreground">Sahil Cutzz Command Center</h1>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                {fetching && <span className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Syncing…</span>}
+                {fetching && (
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Syncing…
+                  </span>
+                )}
                 <button onClick={fetchAll} className="inline-flex items-center gap-2 rounded-3xl border border-border bg-background/90 px-4 py-3 text-sm font-semibold text-muted-foreground hover:border-primary/40 hover:text-primary transition-all">
                   <RefreshCw className="w-4 h-4" /> Refresh
                 </button>
@@ -535,7 +739,7 @@ export default function AdminDashboardPage() {
             <aside className="space-y-6">
               <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
                 <p className="text-xs uppercase tracking-[0.35em] text-primary">Service popularity</p>
-                <h2 className="mt-3 text-2xl font-black text-foreground">Top performers</h2>
+                <h2 className="mt-3 text-2xl font-black text-foreground">Category performance</h2>
                 <div className="mt-8 h-[220px]">
                   {servicePopularity.length ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -552,14 +756,14 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
+              {/* <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
                 <p className="text-xs uppercase tracking-[0.35em] text-primary">Actions</p>
                 <div className="mt-6 grid gap-4">
                   {([
-                    { label: 'Add / edit services',     desc: 'Set name, duration (minutes) and PKR price.', icon: Scissors,      action: () => openAddService() },
-                    { label: 'Set availability window', desc: 'Pick a date & working hours.',                 icon: Clock,         action: () => { setAvailForm(EMPTY_AVAILABILITY); setAvailError(''); setShowAvailabilityModal(true); } },
-                    { label: 'Insert emergency booking',desc: 'Override the timeline with an urgent walk-in.',icon: AlertTriangle, action: () => setShowModal(true) },
-                    { label: 'Review analytics',        desc: 'Service popularity, peak hours, revenue.',     icon: Sparkles,      action: undefined },
+                    { label: 'Add / edit services',      desc: 'Set name, duration (minutes) and PKR price.',  icon: Scissors,      action: () => openAddService() },
+                    { label: 'Set availability window',  desc: 'Pick a date & working hours.',                 icon: Clock,         action: () => { setAvailForm(EMPTY_AVAILABILITY); setAvailError(''); setShowAvailabilityModal(true); } },
+                    { label: 'Insert emergency booking', desc: 'Override the timeline with an urgent walk-in.', icon: AlertTriangle, action: () => setShowModal(true) },
+                    { label: 'Review analytics',         desc: 'Service popularity, peak hours, revenue.',      icon: Sparkles,      action: undefined },
                   ] as const).map(item => (
                     <div key={item.label} onClick={item.action}
                       className={`rounded-3xl border border-border bg-background/90 p-4 hover:border-primary/40 transition-colors ${item.action ? 'cursor-pointer' : ''}`}>
@@ -569,7 +773,7 @@ export default function AdminDashboardPage() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </div> */}
             </aside>
           </div>
 
@@ -585,20 +789,86 @@ export default function AdminDashboardPage() {
                 <Plus className="w-4 h-4" /> Add Service
               </button>
             </div>
+            <datalist id="service-category-options">
+              {serviceCategories.map(category => <option key={category} value={category} />)}
+            </datalist>
+            <div className="mt-6 border-y border-border py-5">
+              <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+                <Field label="Existing service">
+                  <select
+                    value={categoryForm.serviceId}
+                    onChange={e => setCategoryForm(form => ({ ...form, serviceId: e.target.value }))}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">Select service</option>
+                    {services.map(service => (
+                      <option key={service.id} value={service.id}>{service.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Category">
+                  <input
+                    list="service-category-options"
+                    value={categoryForm.category}
+                    onChange={e => setCategoryForm(form => ({ ...form, category: e.target.value }))}
+                    placeholder="Select or type a category"
+                    className={INPUT_CLS}
+                  />
+                </Field>
+                <button
+                  onClick={applyCategoryToExistingService}
+                  disabled={!categoryForm.serviceId || !categoryForm.category.trim() || categorySavingId === categoryForm.serviceId}
+                  className="inline-flex items-center justify-center gap-2 rounded-3xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60"
+                >
+                  {categorySavingId === categoryForm.serviceId ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  Apply Category
+                </button>
+              </div>
+              {categoryError && <p className="mt-3 text-sm text-red-400">{categoryError}</p>}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {serviceCategories.map(category => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setCategoryForm(form => ({ ...form, category }))}
+                    className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full text-left text-sm text-muted-foreground">
                 <thead className="border-b border-border text-xs uppercase tracking-[0.25em]">
-                  <tr>{['Service','Duration','Price (PKR)','Status',''].map(h => <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
+                  <tr>{['Service', 'Category', 'Duration', 'Price (PKR)', 'Status', ''].map(h => <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-border text-foreground">
-                  {!services.length && <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No services yet.'}</td></tr>}
+                  {!services.length && (
+                    <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No services yet.'}</td></tr>
+                  )}
                   {services.map(svc => (
                     <tr key={svc.id} className="hover:bg-background/80 transition-colors">
                       <td className="px-4 py-4">
                         <p className="font-semibold">{svc.name}</p>
                         {svc.description && <p className="text-xs text-muted-foreground mt-0.5">{svc.description}</p>}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap"><span className="inline-flex items-center gap-1.5"><Timer className="w-3.5 h-3.5 text-primary" />{svc.duration_minutes} min</span></td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <select
+                          value={svc.category ?? ''}
+                          onChange={e => saveServiceCategory(svc.id, e.target.value)}
+                          disabled={categorySavingId === svc.id}
+                          className="min-w-36 rounded-2xl border border-primary/20 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary focus:outline-none focus:border-primary/50 disabled:opacity-60"
+                        >
+                          <option value="">No category</option>
+                          {serviceCategories.map(category => (
+                            <option key={category} value={category}>{category}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5"><Timer className="w-3.5 h-3.5 text-primary" />{svc.duration_minutes} min</span>
+                      </td>
                       <td className="px-4 py-4 font-bold whitespace-nowrap">PKR {Number(svc.price).toLocaleString()}</td>
                       <td className="px-4 py-4">
                         <button onClick={() => toggleServiceActive(svc.id, svc.is_active)}
@@ -627,21 +897,21 @@ export default function AdminDashboardPage() {
                 <h2 className="mt-3 text-2xl font-black text-foreground">Manage every booking</h2>
                 <p className="mt-1 text-xs text-muted-foreground flex items-center gap-1.5">
                   <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  Live — new bookings appear automatically
+                  Showing past and today by default. Pick a date to view a specific day or future appointments.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or service…"
+                <input value={search} onChange={e => { setSearch(e.target.value); setAppointmentPage(1); }} placeholder="Search name or service…"
                   className="rounded-2xl border border-border bg-background px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 w-52" />
-                <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+                <input type="date" value={dateFilter} onChange={e => { setDateFilter(e.target.value); setAppointmentPage(1); }}
                   className="rounded-2xl border border-border bg-background px-4 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50" />
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setAppointmentPage(1); }}
                   className="rounded-2xl border border-border bg-background px-4 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50">
                   <option value="All">All statuses</option>
                   {STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
                 {(statusFilter !== 'All' || dateFilter || search) && (
-                  <button onClick={() => { setStatusFilter('All'); setDateFilter(''); setSearch(''); }}
+                  <button onClick={() => { setStatusFilter('All'); setDateFilter(''); setSearch(''); setAppointmentPage(1); }}
                     className="rounded-2xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">Clear</button>
                 )}
                 <button onClick={() => setShowModal(true)}
@@ -651,18 +921,54 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <p className="mt-4 text-xs text-muted-foreground">
-              Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {appointments.length} appointments
-            </p>
+            {emergencyNotice && (
+              <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <div className="flex items-start justify-between gap-4">
+                  <p>{emergencyNotice}</p>
+                  <button onClick={() => setEmergencyNotice('')} className="text-xs font-semibold text-red-200 hover:text-white">Dismiss</button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">
+                Showing <span className="font-semibold text-foreground">{paginatedAppointments.length}</span> of <span className="font-semibold text-foreground">{filtered.length}</span> appointments for <span className="font-semibold text-foreground">{dateFilter ? fmtDate(dateFilter) : 'past and today'}</span>
+              </p>
+              <div className="flex items-center justify-center gap-5">
+                <button
+                  onClick={() => setAppointmentPage(page => Math.max(1, page - 1))}
+                  disabled={safeAppointmentPage === 1}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition-colors hover:border-primary/40 disabled:opacity-40"
+                  aria-label="Previous appointments page"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="min-w-16 text-center text-base font-black text-foreground">
+                  {safeAppointmentPage} / {appointmentPageCount}
+                </span>
+                <button
+                  onClick={() => setAppointmentPage(page => Math.min(appointmentPageCount, page + 1))}
+                  disabled={safeAppointmentPage === appointmentPageCount}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition-colors hover:border-primary/40 disabled:opacity-40"
+                  aria-label="Next appointments page"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
 
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full text-left text-sm text-muted-foreground">
                 <thead className="border-b border-border text-xs uppercase tracking-[0.25em]">
-                  <tr>{['Customer','Service','Barber','Date','Time','Status','Revenue (PKR)',''].map(h => <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
+                  <tr>{['Customer', 'Service', 'Barber', 'Date', 'Time', 'Status', 'Revenue (PKR)', ''].map(h => <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-border text-foreground">
-                  {!filtered.length && <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No appointments match your filters.'}</td></tr>}
-                  {filtered.map(item => (
+                  {!filtered.length && (
+                    <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No appointments match your filters.'}</td></tr>
+                  )}
+                  {paginatedAppointments.map(item => {
+                    const status = appointmentDisplayStatus(item);
+                    return (
                     <tr key={item.id} className="hover:bg-background/80 transition-colors">
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -671,6 +977,7 @@ export default function AdminDashboardPage() {
                             <span className="rounded-full bg-red-500/20 border border-red-500/30 px-2 py-0.5 text-[10px] font-bold uppercase text-red-400">EMERGENCY</span>
                           )}
                         </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.customer_phone || 'No phone number'}</p>
                         {item.notes && <p className="text-xs text-muted-foreground mt-0.5 max-w-[160px] truncate" title={item.notes}>{item.notes}</p>}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">{item.service_name}</td>
@@ -687,8 +994,8 @@ export default function AdminDashboardPage() {
                           </select>
                         ) : (
                           <span onClick={() => setEditingId(item.id)} title="Click to change status"
-                            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity whitespace-nowrap ${STATUS_TEXT[item.status] ?? 'text-foreground'} ${STATUS_BG[item.status] ?? 'bg-border/30 border-border'}`}>
-                            {item.status}<Edit3 className="w-3 h-3 opacity-40" />
+                            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity whitespace-nowrap ${STATUS_TEXT[status] ?? 'text-foreground'} ${STATUS_BG[status] ?? 'bg-border/30 border-border'}`}>
+                            {status}<Edit3 className="w-3 h-3 opacity-40" />
                           </span>
                         )}
                       </td>
@@ -699,7 +1006,8 @@ export default function AdminDashboardPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -711,7 +1019,7 @@ export default function AdminDashboardPage() {
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-primary">Availability</p>
                 <h2 className="mt-3 text-2xl font-black text-foreground">Working hours</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Each row is an availability window. Customers book within these hours based on service duration.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Today is shown by default. Pick a future date to set or review upcoming windows.</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <select value={slotBarberFilter} onChange={e => setSlotBarberFilter(e.target.value)}
@@ -721,8 +1029,8 @@ export default function AdminDashboardPage() {
                 </select>
                 <input type="date" value={slotDateFilter} onChange={e => setSlotDateFilter(e.target.value)}
                   className="rounded-2xl border border-border bg-background px-4 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50" />
-                {(slotBarberFilter !== 'All' || slotDateFilter) && (
-                  <button onClick={() => { setSlotBarberFilter('All'); setSlotDateFilter(''); }}
+                {(slotBarberFilter !== 'All' || slotDateFilter !== localDateKey()) && (
+                  <button onClick={() => { setSlotBarberFilter('All'); setSlotDateFilter(localDateKey()); }}
                     className="rounded-2xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">Clear</button>
                 )}
                 <button onClick={() => { setAvailForm(EMPTY_AVAILABILITY); setAvailError(''); setShowAvailabilityModal(true); }}
@@ -731,35 +1039,52 @@ export default function AdminDashboardPage() {
                 </button>
               </div>
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">Showing <span className="font-semibold text-foreground">{filteredSlots.length}</span> of {slots.length} windows</p>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Showing <span className="font-semibold text-foreground">{filteredSlots.length}</span> windows for <span className="font-semibold text-foreground">{fmtDate(slotDateFilter)}</span>
+            </p>
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full text-left text-sm text-muted-foreground">
                 <thead className="border-b border-border text-xs uppercase tracking-[0.25em]">
-                  <tr>{['Barber','Date','From','To','Duration','Status',''].map(h => <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
+                  <tr>{['Barber', 'Date', 'From', 'To', 'Duration', 'Status', ''].map(h => <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-border text-foreground">
-                  {!filteredSlots.length && <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No availability set.'}</td></tr>}
+                  {!filteredSlots.length && (
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No availability set.'}</td></tr>
+                  )}
                   {filteredSlots.map(slot => {
                     const [fh, fm] = slot.start_time.split(':').map(Number);
                     const [th, tm] = slot.end_time.split(':').map(Number);
                     const totalMins = (th * 60 + tm) - (fh * 60 + fm);
                     const hrs = Math.floor(totalMins / 60), mins = totalMins % 60;
                     const durationLabel = hrs > 0 ? `${hrs}h${mins > 0 ? ` ${mins}m` : ''}` : `${mins}m`;
+                    const slotExpired = isSlotExpired(slot);
                     return (
                       <tr key={slot.id} className="hover:bg-background/80 transition-colors">
-                        <td className="px-4 py-4 font-semibold whitespace-nowrap">{slot.barbers?.name ?? barbers.find(b => b.id === slot.barber_id)?.name ?? '—'}</td>
+                        <td className="px-4 py-4 font-semibold whitespace-nowrap">
+                          {slot.barbers?.name ?? barbers.find(b => b.id === slot.barber_id)?.name ?? '—'}
+                        </td>
                         <td className="px-4 py-4 whitespace-nowrap">{fmtDate(slot.slot_date)}</td>
                         <td className="px-4 py-4 whitespace-nowrap font-medium">{fmtTime(slot.start_time)}</td>
                         <td className="px-4 py-4 whitespace-nowrap font-medium">{fmtTime(slot.end_time)}</td>
-                        <td className="px-4 py-4 whitespace-nowrap text-muted-foreground"><span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-primary" />{durationLabel}</span></td>
-                        <td className="px-4 py-4">
-                          <button onClick={() => toggleSlotAvailability(slot.id, slot.is_available)}
-                            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity whitespace-nowrap ${slot.is_available ? 'text-green-400 bg-green-400/10 border-green-400/20' : 'text-muted-foreground bg-border/30 border-border'}`}>
-                            {slot.is_available ? 'Open' : 'Blocked'}<Edit3 className="w-3 h-3 opacity-40" />
-                          </button>
+                        <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">
+                          <span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-primary" />{durationLabel}</span>
                         </td>
                         <td className="px-4 py-4">
-                          <button onClick={() => deleteSlot(slot.id)} className="rounded-xl border border-red-500/20 p-2 text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                          {slotExpired ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-border/30 px-3 py-1 text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                              Expired
+                            </span>
+                          ) : (
+                            <button onClick={() => toggleSlotAvailability(slot.id, slot.is_available)}
+                              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity whitespace-nowrap ${slot.is_available ? 'text-green-400 bg-green-400/10 border-green-400/20' : 'text-muted-foreground bg-border/30 border-border'}`}>
+                              {slot.is_available ? 'Open' : 'Blocked'}<Edit3 className="w-3 h-3 opacity-40" />
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-4">
+                          <button onClick={() => deleteSlot(slot.id)} className="rounded-xl border border-red-500/20 p-2 text-red-400 hover:bg-red-500/10 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -771,21 +1096,54 @@ export default function AdminDashboardPage() {
 
           {/* ══ Registered Users ══ */}
           <section className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
-            <p className="text-xs uppercase tracking-[0.35em] text-primary">User registry</p>
-            <h2 className="mt-3 text-2xl font-black text-foreground">Registered customers</h2>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-primary">User registry</p>
+                <h2 className="mt-3 text-2xl font-black text-foreground">Registered customers</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Showing the latest 10 customers per page with name and phone.</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <button
+                  onClick={() => setCustomerPage(page => Math.max(1, page - 1))}
+                  disabled={safeCustomerPage === 1}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-foreground disabled:opacity-40"
+                  aria-label="Previous customers page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="min-w-20 text-center font-semibold text-foreground">
+                  {safeCustomerPage} / {customerPageCount}
+                </span>
+                <button
+                  onClick={() => setCustomerPage(page => Math.min(customerPageCount, page + 1))}
+                  disabled={safeCustomerPage === customerPageCount}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-foreground disabled:opacity-40"
+                  aria-label="Next customers page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full text-left text-sm text-muted-foreground">
                 <thead className="border-b border-border text-xs uppercase tracking-[0.25em]">
-                  <tr>{['Name','Email','Phone','Joined'].map(h => <th key={h} className="px-4 py-3">{h}</th>)}</tr>
+                  <tr>{['Name', 'Email', 'Phone', 'Joined'].map(h => <th key={h} className="px-4 py-3">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-border text-foreground">
-                  {!users.length && <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No users yet.'}</td></tr>}
-                  {users.map(u => (
+                  {!users.length && (
+                    <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">{fetching ? 'Loading…' : 'No users yet.'}</td></tr>
+                  )}
+                  {paginatedUsers.map(u => (
                     <tr key={u.id} className="hover:bg-background/80 transition-colors">
-                      <td className="px-4 py-4 font-semibold">{u.name}</td>
+                      <td className="px-4 py-4">
+                        <p className="font-semibold">{u.name || 'Unnamed customer'}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{u.phone ?? 'No phone number'}</p>
+                      </td>
                       <td className="px-4 py-4 text-muted-foreground">{u.email}</td>
                       <td className="px-4 py-4 text-muted-foreground">{u.phone ?? '—'}</td>
-                      <td className="px-4 py-4 text-muted-foreground">{new Date(u.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                      <td className="px-4 py-4 text-muted-foreground">
+                        {new Date(u.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -819,6 +1177,27 @@ export default function AdminDashboardPage() {
                 <Field label="Service Name" required>
                   <input value={serviceForm.name} onChange={e => patchServiceForm({ name: e.target.value })} placeholder="e.g. Hair Cut" className={INPUT_CLS} />
                 </Field>
+                <Field label="Category">
+                  <input
+                    list="service-category-options"
+                    value={serviceForm.category}
+                    onChange={e => patchServiceForm({ category: e.target.value })}
+                    placeholder="Select or type a category"
+                    className={INPUT_CLS}
+                  />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {serviceCategories.map(category => (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => patchServiceForm({ category })}
+                        className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Duration (minutes)" required>
                     <input type="number" min="1" step="1" value={serviceForm.duration_minutes} onChange={e => patchServiceForm({ duration_minutes: e.target.value })} placeholder="e.g. 30" className={INPUT_CLS} />
@@ -838,7 +1217,8 @@ export default function AdminDashboardPage() {
               </div>
               <div className="mt-6 flex gap-3">
                 <button onClick={() => setShowServiceModal(false)} className="flex-1 rounded-3xl border border-border px-5 py-3 text-sm font-semibold text-muted-foreground hover:border-primary/30 hover:text-foreground transition-all">Cancel</button>
-                <button onClick={submitService} disabled={serviceSubmitting} className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all">
+                <button onClick={submitService} disabled={serviceSubmitting}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all">
                   {serviceSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><CheckCircle className="w-4 h-4" /> {editingServiceId ? 'Save Changes' : 'Add Service'}</>}
                 </button>
               </div>
@@ -887,7 +1267,10 @@ export default function AdminDashboardPage() {
                 {availForm.from_time && availForm.to_time && availForm.from_time < availForm.to_time && (
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-widest text-primary">Window summary</p>
-                    <p className="text-sm text-foreground"><span className="font-semibold">{fmtTime(availForm.from_time)}</span>{' → '}<span className="font-semibold">{fmtTime(availForm.to_time)}</span></p>
+                    <p className="text-sm text-foreground">
+                      <span className="font-semibold">{fmtTime(availForm.from_time)}</span>{' → '}
+                      <span className="font-semibold">{fmtTime(availForm.to_time)}</span>
+                    </p>
                     {services.filter(s => s.is_active).length > 0 && (
                       <div className="mt-2 space-y-1">
                         <p className="text-xs text-muted-foreground">Appointments that fit per service:</p>
@@ -907,7 +1290,8 @@ export default function AdminDashboardPage() {
               </div>
               <div className="mt-6 flex gap-3">
                 <button onClick={() => setShowAvailabilityModal(false)} className="flex-1 rounded-3xl border border-border px-5 py-3 text-sm font-semibold text-muted-foreground hover:border-primary/30 hover:text-foreground transition-all">Cancel</button>
-                <button onClick={submitAvailability} disabled={availSubmitting || !availForm.from_time || !availForm.to_time || availForm.from_time >= availForm.to_time}
+                <button onClick={submitAvailability}
+                  disabled={availSubmitting || !availForm.from_time || !availForm.to_time || availForm.from_time >= availForm.to_time}
                   className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all">
                   {availSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><CheckCircle className="w-4 h-4" /> Save Availability</>}
                 </button>
@@ -949,7 +1333,6 @@ export default function AdminDashboardPage() {
                     {services.filter(s => s.is_active).map(s => (
                       <option key={s.id} value={s.name}>{s.name} ({s.duration_minutes} min — PKR {Number(s.price).toLocaleString()})</option>
                     ))}
-                    {/* {DEFAULT_SERVICES.map(s => <option key={s} value={s}>{s}</option>)} */}
                   </select>
                 </Field>
                 <Field label="Barber">
@@ -966,6 +1349,25 @@ export default function AdminDashboardPage() {
                     <input type="time" value={form.appointment_time} onChange={e => patchForm({ appointment_time: e.target.value })} className={INPUT_CLS} />
                   </Field>
                 </div>
+                {emergencyConflicts.length > 0 && (
+                  <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+                    <p className="text-xs font-bold uppercase tracking-widest text-red-300">
+                      This emergency will override {emergencyConflicts.length} appointment{emergencyConflicts.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {emergencyConflicts.map(appt => (
+                        <div key={appt.id} className="rounded-xl border border-red-500/10 bg-background/60 px-3 py-2 text-xs">
+                          <p className="font-semibold text-foreground">
+                            {appt.customer_name}{appt.customer_phone ? ` (${appt.customer_phone})` : ''}
+                          </p>
+                          <p className="mt-0.5 text-muted-foreground">
+                            {appt.service_name} at {fmtTime(appt.appointment_time)} with {appt.barbers?.name || 'any barber'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <Field label="Revenue (PKR)">
                   <input type="number" min="0" step="1" value={form.revenue} onChange={e => patchForm({ revenue: e.target.value })} placeholder="500" className={INPUT_CLS} />
                 </Field>
@@ -975,8 +1377,9 @@ export default function AdminDashboardPage() {
               </div>
               <div className="mt-6 flex gap-3">
                 <button onClick={() => setShowModal(false)} className="flex-1 rounded-3xl border border-border px-5 py-3 text-sm font-semibold text-muted-foreground hover:border-primary/30 hover:text-foreground transition-all">Cancel</button>
-                <button onClick={submitEmergency} disabled={submitting} className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all">
-                  {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Booking…</> : <><CheckCircle className="w-4 h-4" /> Confirm Booking</>}
+                <button onClick={submitEmergency} disabled={submitting}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all">
+                  {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Booking…</> : <><CheckCircle className="w-4 h-4" /> {emergencyConflicts.length ? `Confirm & Override ${emergencyConflicts.length}` : 'Confirm Booking'}</>}
                 </button>
               </div>
             </motion.div>
