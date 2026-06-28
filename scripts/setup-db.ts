@@ -10,7 +10,7 @@
  *   node -r ts-node/register lib/setup-db.ts
  */
 
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { SAHIL_BARBER, SERVICES } from '../lib/seedDatabase';
 
 async function setupDatabase() {

@@ -1,6 +1,6 @@
 /* eslint-disable prefer-const */
-import { supabase } from './supabaseClient';
-import type { AppointmentItem, BarberProfile, ServiceItem } from './types';
+import { supabase } from './supabase';
+import type { BarberProfile } from './types';
 
 interface TimeSlot {
   start: string;
@@ -120,8 +120,8 @@ export async function createManualAppointment(data: {
     if (error) throw error;
 
     return { success: true, data: newApt };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unable to create appointment.' };
   }
 }
 

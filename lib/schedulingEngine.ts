@@ -1,5 +1,5 @@
 /* eslint-disable prefer-const */
-import { supabase } from './supabaseClient';
+import { supabase } from './supabase';
 import type { AppointmentItem, BarberProfile, ServiceItem } from './types';
 
 interface TimeSlot {

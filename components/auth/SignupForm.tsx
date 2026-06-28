@@ -41,7 +41,7 @@ export function SignupForm() {
       } else {
         setError(result.message);
       }
-    } catch (err) {
+    } catch {
       setError('Unable to create account. Please try again.');
     } finally {
       setLoading(false);

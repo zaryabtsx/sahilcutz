@@ -6,17 +6,26 @@
 //  Modes: login | signup | forgot
 // ─────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, Loader2, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { signIn, signUp, sendPasswordReset } from '@/lib/auth';
 
 type Mode = 'login' | 'signup' | 'forgot';
 
-interface AuthCardProps {
+interface ModeAuthCardProps {
   mode: Mode;
   onSuccess: () => void;
 }
+
+interface LayoutAuthCardProps {
+  title: string;
+  description: string;
+  footer?: ReactNode;
+  children: ReactNode;
+}
+
+type AuthCardProps = ModeAuthCardProps | LayoutAuthCardProps;
 
 // ── tiny helper ──────────────────────────────────────────────
 function Field({
@@ -61,7 +70,35 @@ function Field({
   );
 }
 
-export function AuthCard({ mode, onSuccess }: AuthCardProps) {
+export function AuthCard(props: AuthCardProps) {
+  if ('children' in props) {
+    const { title, description, footer, children } = props;
+
+    return (
+      <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
+        <div className="text-center mb-8">
+          <p className="text-xs uppercase tracking-[0.35em] text-primary font-semibold">
+            Sahil Cutzz
+          </p>
+          <h1 className="mt-2 text-3xl font-black text-foreground">{title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        </div>
+
+        <div className="space-y-6">{children}</div>
+
+        {footer && (
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+            {footer}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return <ModeAuthCard {...props} />;
+}
+
+function ModeAuthCard({ mode, onSuccess }: ModeAuthCardProps) {
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');

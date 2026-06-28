@@ -38,7 +38,7 @@ export function LoginForm() {
       } else {
         setError(result.message);
       }
-    } catch (err) {
+    } catch {
       setError('Unable to sign in. Please try again.');
     } finally {
       setLoading(false);

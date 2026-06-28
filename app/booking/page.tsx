@@ -4,7 +4,7 @@
 //  app/booking/page.tsx
 // ─────────────────────────────────────────────────────────────
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { Suspense, useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
@@ -207,7 +207,7 @@ function Steps({ current }: { current: number }) {
 
 // ── Main component ────────────────────────────────────────────
 
-export default function BookingPage() {
+function BookingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -944,5 +944,13 @@ export default function BookingPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function BookingPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingPageContent />
+    </Suspense>
   );
 }
