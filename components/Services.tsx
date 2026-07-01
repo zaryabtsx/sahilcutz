@@ -48,7 +48,7 @@ const categoryMeta: Record<string, CategoryMeta> = {
   Beard: {
     icon: Wind,
     tag: 'Popular',
-    description: 'Sharp beard shaping, lineups, detailing, and premium finishing.',
+    description: 'Professional beard shaping and grooming, tailored to your face shape. Price varies based on style and length — Rs 500–1200',
     color: '#10b981',
     image: 'https://images.unsplash.com/photo-1657105052497-f996284ffff8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHxiYXJiZXIlMjBoYWlyY3V0JTIwc2Npc3NvcnN8ZW58MXx8fHwxNzc4NTMxMTE1fDA&ixlib=rb-4.1.0&q=80&w=900',
   },
