@@ -5,10 +5,10 @@ import { motion } from 'motion/react';
 import { ArrowLeft, MapPin, Phone, Mail, Clock, Scissors, Send } from 'lucide-react';
 
 const contactItems = [
-  { icon: MapPin, label: 'Address', lines: ['123 Luxury Street, Downtown', 'District, NY 10001'] },
-  { icon: Phone, label: 'Phone', lines: ['+1 (555) 123-4567'] },
-  { icon: Mail, label: 'Email', lines: ['hello@sahilcutzz.com'] },
-  { icon: Clock, label: 'Hours', lines: ['Mon–Fri: 9:00 AM – 8:00 PM', 'Sat–Sun: 10:00 AM – 6:00 PM'] },
+  { icon: MapPin, label: 'Address', lines: ['P 1024/4 USMAN PLAZA GROUND FLOOR, MIAN ASGHAR MALL ROAD RAWALPINDI, Rawalpindi,'] },
+  { icon: Phone, label: 'Phone', lines: ['+92 342 1480405'] },
+  { icon: Mail, label: 'Email', lines: ['sahilcutzz@gmail.com'] },
+  // { icon: Clock, label: 'Hours', lines: ['Mon–Fri: 9:00 AM – 8:00 PM', 'Sat–Sun: 10:00 AM – 6:00 PM'] },
 ];
 
 export default function ContactPage() {

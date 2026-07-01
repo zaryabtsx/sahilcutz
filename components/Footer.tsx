@@ -27,10 +27,10 @@ export function Footer() {
   ];
 
   const contactItems = [
-    { icon: MapPin, lines: ['123 Luxury Street, Downtown', 'District, NY 10001'] },
-    { icon: Phone, lines: ['+1 (555) 123-4567'] },
-    { icon: Mail, lines: ['hello@sahilcutzz.com'] },
-    { icon: Clock, lines: ['Mon–Fri: 9:00 AM – 8:00 PM', 'Sat–Sun: 10:00 AM – 6:00 PM'] },
+    { icon: MapPin, lines: ['P 1024/4 USMAN PLAZA GROUND FLOOR, MIAN ASGHAR MALL ROAD RAWALPINDI, Rawalpindi,'] },
+    { icon: Phone, lines: ['+92 342 1480405'] },
+    { icon: Mail, lines: ['sahilcutzz@gmail.com'] },
+    // { icon: Clock, lines: ['Mon–Fri: 9:00 AM – 8:00 PM', 'Sat–Sun: 10:00 AM – 6:00 PM'] },
   ];
 
   return (
