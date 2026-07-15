@@ -147,6 +147,20 @@ async function syncProfileFromAuth(profile: UserProfile): Promise<void> {
   }
 }
 
+async function sendWelcomeEmail(email: string, fullName: string): Promise<void> {
+  if (!isBrowser()) return;
+
+  try {
+    await fetch('/api/auth/welcome-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, fullName }),
+    });
+  } catch (error) {
+    console.warn('Welcome email request failed:', error);
+  }
+}
+
 // ─── User Sign-In ─────────────────────────────────────────────────────────────
 export async function signIn(
   email: string,
@@ -252,6 +266,7 @@ export async function signUp(payload: {
     };
 
     await syncProfileFromAuth(profile);
+    await sendWelcomeEmail(payload.email, payload.fullName);
     setSession({
       user: profile,
       token: response.data.session?.access_token ?? 'anonymous',
@@ -274,6 +289,7 @@ export async function signUp(payload: {
     },
   };
   setSession(newSession);
+  await sendWelcomeEmail(payload.email, payload.fullName);
   return { success: true, message: 'Account created' };
 }
 

@@ -1,0 +1,283 @@
+import crypto from 'crypto';
+
+export interface CreatePaymentInput {
+  amount: number;
+  payerEmail: string;
+  webId: string;
+  returnUrl: string;
+}
+
+export interface CreatePaymentResult {
+  flowId: string;
+  paymentUrl: string;
+  webId: string;
+  raw: Record<string, unknown>;
+}
+
+export interface VolzixPaymentStatus {
+  web_id?: string;
+  flow_id?: string;
+  amount?: number | string;
+  currency?: string;
+  status?: string;
+  status_code?: number | string;
+  status_description?: string;
+  [key: string]: unknown;
+}
+
+export interface VolzixIpnPayload {
+  merchant_mid: string;
+  event_id: string;
+  timestamp: number | string;
+  signature: string;
+  flow_id: string;
+  status: string;
+  amount: number | string;
+  currency: string;
+  web_id: string;
+  issuer?: string;
+  provider?: string;
+  reference?: string;
+  message?: string;
+  event_time?: string;
+  source?: string;
+}
+
+const TEN_MINUTES_SECONDS = 10 * 60;
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing ${name}`);
+  }
+  return value;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function joinUrl(baseUrl: string, path: string) {
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+}
+
+function parseJsonResponse(text: string, label: string): Record<string, unknown> {
+  if (!text.trim()) return {};
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    const preview = text.trim().slice(0, 120).replace(/\s+/g, ' ');
+    throw new Error(`${label} returned non-JSON response. Response started with: ${preview}`);
+  }
+}
+
+function timingSafeEqualHex(left: string, right: string) {
+  try {
+    const leftBuffer = Buffer.from(left, 'hex');
+    const rightBuffer = Buffer.from(right, 'hex');
+    return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+  } catch {
+    return false;
+  }
+}
+
+export function getVolzixConfig() {
+  return {
+    baseUrl: process.env.VOLZIX_BASE_URL || 'https://volzix.com',
+    merchantMid: requiredEnv('VOLZIX_MERCHANT_MID'),
+    merchantApiKey: requiredEnv('VOLZIX_MERCHANT_API_KEY'),
+  };
+}
+
+export function generateOrderId(userId: string, timestamp: number = Date.now()): string {
+  return `ORD-${userId}-${timestamp}`;
+}
+
+export function generateWebId(reference: string, timestamp: number = Date.now()) {
+  const normalized = reference.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 70);
+  return `SC-${normalized}-${timestamp}`.slice(0, 100);
+}
+
+export function getAdvancePaymentAmount(): number {
+  return parseInt(process.env.NEXT_PUBLIC_VOLZIX_ADVANCE_AMOUNT || process.env.NEXT_PUBLIC_VOLZEX_ADVANCE_AMOUNT || '500', 10);
+}
+
+export function formatAmountForSignature(amount: number | string) {
+  return Number(amount).toFixed(2);
+}
+
+export function signRequest(fields: string[]): string {
+  const { merchantApiKey } = getVolzixConfig();
+  return crypto
+    .createHmac('sha256', merchantApiKey)
+    .update(fields.join('|'))
+    .digest('hex');
+}
+
+export function isTimestampFresh(timestamp: number | string, nowSeconds = Math.floor(Date.now() / 1000)) {
+  const parsed = Number(timestamp);
+  return Number.isFinite(parsed) && Math.abs(nowSeconds - parsed) <= TEN_MINUTES_SECONDS;
+}
+
+async function postVolzix(path: string, body: Record<string, unknown>, label: string) {
+  const { baseUrl } = getVolzixConfig();
+  const response = await fetch(joinUrl(baseUrl, path), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  const data = parseJsonResponse(text, label);
+
+  if (!response.ok) {
+    console.error(`${label} failed:`, {
+      status: response.status,
+      statusText: response.statusText,
+      body: data,
+    });
+
+    const message =
+      getString(data.message) ||
+      getString(data.error) ||
+      getString(data.detail) ||
+      `${label} failed with HTTP ${response.status}`;
+    const error = new Error(message) as Error & { status?: number; data?: Record<string, unknown> };
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+
+  return data;
+}
+
+export async function createPayment({
+  amount,
+  payerEmail,
+  webId,
+  returnUrl,
+}: CreatePaymentInput): Promise<CreatePaymentResult> {
+  const { merchantMid } = getVolzixConfig();
+  const timestamp = Math.floor(Date.now() / 1000);
+  const currency = 'PKR';
+  const amountForSignature = formatAmountForSignature(amount);
+  const signature = signRequest([
+    merchantMid,
+    amountForSignature,
+    currency,
+    webId,
+    payerEmail,
+    String(timestamp),
+  ]);
+
+  const data = await postVolzix('/auth/', {
+    merchant_mid: merchantMid,
+    amount: Number(amountForSignature),
+    currency,
+    payer_email: payerEmail,
+    web_id: webId,
+    return: returnUrl,
+    timestamp,
+    signature,
+  }, 'Volzix create payment');
+
+  const flowId = getString(data.flow_id);
+  const paymentUrl = getString(data.payment_url);
+  const returnedWebId = getString(data.web_id) || webId;
+
+  if (data.status !== 'ok' || !flowId || !paymentUrl) {
+    throw new Error(getString(data.message) || 'Volzix create payment did not return flow_id/payment_url');
+  }
+
+  return {
+    flowId,
+    paymentUrl,
+    webId: returnedWebId,
+    raw: data,
+  };
+}
+
+export async function checkPaymentStatus({
+  flowId,
+  webId,
+}: {
+  flowId?: string;
+  webId?: string;
+}): Promise<VolzixPaymentStatus> {
+  if ((flowId && webId) || (!flowId && !webId)) {
+    throw new Error('checkPaymentStatus requires either flowId or webId');
+  }
+
+  const { merchantMid } = getVolzixConfig();
+  const timestamp = Math.floor(Date.now() / 1000);
+  const reference = flowId || webId || '';
+  const signature = signRequest([merchantMid, reference, String(timestamp)]);
+  const body: Record<string, unknown> = {
+    merchant_mid: merchantMid,
+    timestamp,
+    signature,
+  };
+
+  if (flowId) body.flow_id = flowId;
+  if (webId) body.web_id = webId;
+
+  const data = await postVolzix('/inquire/v1/', body, 'Volzix payment inquiry');
+  const payment = data.payment;
+
+  if (data.status !== 'ok' || !payment || typeof payment !== 'object' || Array.isArray(payment)) {
+    throw new Error(getString(data.message) || 'Volzix inquiry did not return a payment object');
+  }
+
+  return payment as VolzixPaymentStatus;
+}
+
+export function verifyIpnSignature(payload: VolzixIpnPayload) {
+  if (!isTimestampFresh(payload.timestamp)) {
+    return {
+      ok: false,
+      reason: 'IPN timestamp is outside the allowed 10 minute window',
+    };
+  }
+
+  const formattedExpected = signRequest([
+    payload.merchant_mid,
+    payload.flow_id,
+    payload.status,
+    formatAmountForSignature(payload.amount),
+    payload.currency,
+    payload.web_id,
+    String(payload.timestamp),
+  ]);
+  const rawAmount = String(payload.amount);
+  const rawExpected = rawAmount === formatAmountForSignature(payload.amount)
+    ? formattedExpected
+    : signRequest([
+        payload.merchant_mid,
+        payload.flow_id,
+        payload.status,
+        rawAmount,
+        payload.currency,
+        payload.web_id,
+        String(payload.timestamp),
+      ]);
+  const provided = String(payload.signature || '').trim();
+
+  return {
+    ok: timingSafeEqualHex(formattedExpected, provided) || timingSafeEqualHex(rawExpected, provided),
+    reason: 'IPN signature mismatch',
+  };
+}
+
+export function isVolzixCompleted(status?: string) {
+  return String(status || '').toLowerCase() === 'completed';
+}
+
+export function isVolzixTerminalFailure(status?: string) {
+  return ['expired', 'failed', 'cancelled', 'canceled', 'dropped', 'refunded'].includes(String(status || '').toLowerCase());
+}

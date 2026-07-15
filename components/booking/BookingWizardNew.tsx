@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ChevronRight,
   ChevronLeft,
@@ -14,14 +14,32 @@ import {
   CheckCircle,
   AlertCircle,
   Loader,
+  CreditCard,
 } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { useAppStore } from '@/lib/store';
 import { initialBarbers, initialServices } from '@/lib/mockData';
+import { PaymentStep } from './PaymentStep';
 import type { ServiceItem, BarberProfile } from '@/lib/types';
 
 interface BookingWizardProps {
   onComplete?: (booking: any) => void;
+}
+
+interface BookingData {
+  serviceId: string;
+  barberId: string;
+  date: string;
+  time: string;
+  notes: string;
+}
+
+function isBookingData(value: unknown): value is BookingData {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const data = value as Record<string, unknown>;
+  return ['serviceId', 'barberId', 'date', 'time', 'notes'].every(
+    (key) => typeof data[key] === 'string',
+  );
 }
 
 const steps = [
@@ -30,10 +48,12 @@ const steps = [
   { number: 3, title: 'Pick Date', icon: Calendar },
   { number: 4, title: 'Select Time', icon: Clock },
   { number: 5, title: 'Confirm Booking', icon: CheckCircle },
+  { number: 6, title: 'Secure Payment', icon: CreditCard },
 ];
 
 export function BookingWizard({ onComplete }: BookingWizardProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [barbers, setBarbers] = useState<BarberProfile[]>([]);
@@ -41,15 +61,48 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [paymentData, setPaymentData] = useState<any>(null);
   const session = getSession();
   const { setAppointments } = useAppStore();
-  const [bookingData, setBookingData] = useState({
+  const [bookingData, setBookingData] = useState<BookingData>({
     serviceId: '',
     barberId: '',
     date: '',
     time: '',
     notes: '',
   });
+
+  // Check for payment completion from URL params
+  useEffect(() => {
+    const paymentStatus = searchParams.get('paymentStatus');
+    const paymentId = searchParams.get('paymentId');
+
+    // Restore booking data from sessionStorage if payment is returning
+    let restoredBookingData: BookingData | null = null;
+    const savedBookingData = sessionStorage.getItem('bookingData');
+    if (savedBookingData && paymentStatus === 'success') {
+      try {
+        const parsedBookingData = JSON.parse(savedBookingData);
+        if (isBookingData(parsedBookingData)) {
+          restoredBookingData = parsedBookingData;
+          setBookingData(parsedBookingData);
+        }
+      } catch (e) {
+        console.warn('Failed to restore booking data:', e);
+      }
+    }
+
+    if (paymentStatus === 'success' && paymentId && restoredBookingData) {
+      setPaymentData({ paymentId });
+      // Create appointment after payment verification
+      setTimeout(() => {
+        createAppointmentAfterPayment(paymentId, restoredBookingData!);
+      }, 100); // Small delay to ensure state is updated
+    } else if (paymentStatus === 'failed') {
+      setError('Payment was declined. Please try again.');
+      setCurrentStep(6); // Go back to payment step
+    }
+  }, [searchParams]);
 
   // Check authentication
   useEffect(() => {
@@ -161,6 +214,21 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
   };
 
   const handleComplete = async () => {
+    setError('');
+    if (!session?.user?.id) {
+      setError('Please log in to complete your booking.');
+      router.push('/auth/login');
+      return;
+    }
+
+    // Save booking data to sessionStorage before moving to payment
+    sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
+    
+    // Move to payment step
+    handleNext();
+  };
+
+  const createAppointmentAfterPayment = async (paymentId?: string, bookingInfo?: BookingData) => {
     setLoading(true);
     setError('');
     try {
@@ -170,18 +238,20 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
         return;
       }
 
-      const service = services.find((s) => s.id === bookingData.serviceId);
+      const dataToUse = bookingInfo || bookingData;
+
+      const service = services.find((s) => s.id === dataToUse.serviceId);
       if (!service) {
         setError('Service not found');
         return;
       }
 
-      if (!bookingData.time) {
+      if (!dataToUse.time) {
         setError('Please select a time slot');
         return;
       }
 
-      const startDate = new Date(`${bookingData.date}T${bookingData.time}`);
+      const startDate = new Date(`${dataToUse.date}T${dataToUse.time}`);
       const endDate = new Date(startDate.getTime() + service.duration_minutes * 60000);
 
       const res = await fetch('/api/appointments', {
@@ -189,13 +259,14 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: session.user.id,
-          barber_id: bookingData.barberId,
-          service_id: bookingData.serviceId,
+          barber_id: dataToUse.barberId,
+          service_id: dataToUse.serviceId,
           start_at: startDate.toISOString(),
           end_at: endDate.toISOString(),
           duration_minutes: service.duration_minutes,
-          notes: bookingData.notes || null,
+          notes: dataToUse.notes || null,
           status: 'confirmed',
+          payment_id: paymentId || paymentData?.paymentId,
         }),
       });
 
@@ -208,6 +279,9 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
       setSuccess(true);
       setAppointments([appointment]); // Update store
       onComplete?.(appointment);
+      
+      // Clear sessionStorage after successful booking
+      sessionStorage.removeItem('bookingData');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to book appointment';
       console.error('Booking error:', error);
@@ -482,6 +556,24 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
               </div>
             </div>
           )}
+
+          {/* Step 6: Payment */}
+          {currentStep === 6 && session?.user && (
+            <PaymentStep
+              userId={session.user.id}
+              customerEmail={session.user.email || ''}
+              customerName={session.user.full_name || session.user.email || 'Guest'}
+              customerPhone={session.user.phone || ''}
+              serviceId={bookingData.serviceId}
+              barberId={bookingData.barberId}
+              bookingDate={bookingData.date}
+              bookingTime={bookingData.time}
+              loading={loading}
+              onPaymentFailed={(error) => {
+                setError(error);
+              }}
+            />
+          )}
         </motion.div>
 
         {/* Error Alert */}
@@ -515,7 +607,7 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
 
         {/* Navigation Buttons */}
         <AnimatePresence>
-          {!success && (
+          {!success && currentStep !== 6 && (
             <motion.div
               initial={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -552,8 +644,8 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
                   </>
                 ) : currentStep === 5 ? (
                   <>
-                    Complete Booking
-                    <CheckCircle className="w-4 h-4" />
+                    Proceed to Payment
+                    <CreditCard className="w-4 h-4" />
                   </>
                 ) : (
                   <>

@@ -2,12 +2,20 @@
 
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, ArrowRight, ShieldCheck, Mail, User, Lock } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, Mail, User, Lock } from 'lucide-react';
 import { loginSchema, signupSchema, forgotPasswordSchema } from '@/lib/validators';
 import { supabase } from '@/lib/supabase';
 import type { z } from 'zod';
+
+type AuthFormValues = {
+  email: string;
+  password?: string;
+  full_name?: string;
+  phone?: string;
+  role?: 'customer' | 'barber';
+};
 
 interface AuthCardProps {
   mode: 'login' | 'signup' | 'forgot';
@@ -44,18 +52,19 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) });
+  } = useForm<AuthFormValues>({ resolver: zodResolver(schema) as Resolver<AuthFormValues> });
 
-  const handleForm = async (values: z.infer<typeof schema>) => {
+  const handleForm = async (values: AuthFormValues) => {
     setErrorMessage('');
     setSuccessMessage('');
     setLoading(true);
 
     try {
       if (mode === 'login') {
-        const { error, data } = await supabase.auth.signInWithPassword({
-          email: values.email,
-          password: (values as any).password,
+        const loginValues = values as z.infer<typeof loginSchema>;
+        const { error } = await supabase.auth.signInWithPassword({
+          email: loginValues.email,
+          password: loginValues.password,
         });
 
         if (error) throw error;
@@ -64,19 +73,32 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
       }
 
       if (mode === 'signup') {
+        const signupValues = values as z.infer<typeof signupSchema>;
         const { error } = await supabase.auth.signUp({
-          email: values.email,
-          password: (values as any).password,
+          email: signupValues.email,
+          password: signupValues.password,
           options: {
             data: {
-              full_name: (values as any).full_name,
-              phone: (values as any).phone,
-              role: (values as any).role,
+              full_name: signupValues.full_name,
+              phone: signupValues.phone,
+              role: signupValues.role,
             },
           },
         });
 
         if (error) throw error;
+        try {
+          await fetch('/api/auth/welcome-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: signupValues.email,
+              fullName: signupValues.full_name,
+            }),
+          });
+        } catch (mailError) {
+          console.warn('Welcome email request failed:', mailError);
+        }
         setSuccessMessage('Account created successfully. Check your email to verify.');
       }
 
@@ -88,8 +110,8 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
         if (error) throw error;
         setSuccessMessage('Password recovery link sent. Check your inbox.');
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Unable to complete request');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Unable to complete request');
     } finally {
       setLoading(false);
     }
@@ -120,11 +142,11 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
                 <input
                   id="full_name"
                   type="text"
-                  {...(register as any)('full_name')}
+                  {...register('full_name')}
                   className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
                 />
               </div>
-              {(errors as any).full_name && <p className="text-xs text-destructive mt-2">{(errors as any).full_name.message}</p>}
+              {errors.full_name && <p className="text-xs text-destructive mt-2">{errors.full_name.message}</p>}
             </div>
           )}
 
@@ -135,11 +157,11 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
               <input
                 id="email"
                 type="email"
-                {...(register as any)('email')}
+                {...register('email')}
                 className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
               />
             </div>
-            {(errors as any).email && <p className="text-xs text-destructive mt-2">{(errors as any).email.message}</p>}
+            {errors.email && <p className="text-xs text-destructive mt-2">{errors.email.message}</p>}
           </div>
 
           {mode !== 'forgot' && (
@@ -150,7 +172,7 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  {...(register as any)('password')}
+                  {...register('password')}
                   className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
                 />
                 <button
@@ -161,7 +183,7 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              {(errors as any).password && <p className="text-xs text-destructive mt-2">{(errors as any).password.message}</p>}
+              {errors.password && <p className="text-xs text-destructive mt-2">{errors.password.message}</p>}
             </div>
           )}
 
@@ -171,10 +193,10 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
               <input
                 id="phone"
                 type="tel"
-                {...(register as any)('phone')}
+                {...register('phone')}
                 className="w-full rounded-2xl border border-border bg-background/90 px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
               />
-              {(errors as any).phone && <p className="text-xs text-destructive mt-2">{(errors as any).phone.message}</p>}
+              {errors.phone && <p className="text-xs text-destructive mt-2">{errors.phone.message}</p>}
             </div>
           )}
 
@@ -183,7 +205,7 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
               <label htmlFor="role" className="text-sm font-medium text-foreground block mb-2">Account Type</label>
               <select
                 id="role"
-                {...(register as any)('role')}
+                {...register('role')}
                 className="w-full rounded-2xl border border-border bg-background/90 px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
               >
                 <option value="customer">Customer</option>

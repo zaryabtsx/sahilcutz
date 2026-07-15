@@ -1,10 +1,208 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-import { insertEmergencyAppointment, generateAvailableSlots } from '@/lib/schedulingEngine';
+import { createClient } from '@supabase/supabase-js';
+import { insertEmergencyAppointment } from '@/lib/schedulingEngine';
+import { sendMail } from '@/lib/mailer';
+import {
+  adminBookingNotificationHtml,
+  bookingConfirmationHtml,
+} from '@/lib/emailTemplates';
 import type { AppointmentItem } from '@/lib/types';
+
+type ServerClient = ReturnType<typeof getServerClient>;
+type DbError = { message: string };
+
+interface CustomerRow {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+}
+
+interface ServiceRow {
+  id: string;
+  name: string | null;
+  price: number | string | null;
+}
+
+interface BarberRow {
+  id: string;
+  name: string | null;
+}
+
+interface AppointmentRow {
+  id: string;
+  user_id: string;
+  barber_id: string;
+  service_id: string;
+  start_at: string;
+  end_at: string;
+  duration_minutes: number;
+  status: string;
+}
+
+interface BookingEmailDetails {
+  customerEmail?: string;
+  customerName?: string;
+  serviceName?: string;
+  barberName?: string;
+  amountPaid?: number | string;
+}
+
+function getServerClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error('Server misconfigured: missing Supabase configuration');
+  }
+
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+}
+
+function shouldSendBookingEmail(status: unknown) {
+  const normalized = String(status || '').toLowerCase();
+  return normalized !== 'pending' && normalized !== 'cancelled' && normalized !== 'canceled';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function normalizeEmailDetails(value: unknown): BookingEmailDetails | undefined {
+  if (!isRecord(value)) return undefined;
+
+  return {
+    customerEmail: stringValue(value.customerEmail),
+    customerName: stringValue(value.customerName),
+    serviceName: stringValue(value.serviceName),
+    barberName: stringValue(value.barberName),
+    amountPaid:
+      typeof value.amountPaid === 'number' || typeof value.amountPaid === 'string'
+        ? value.amountPaid
+        : undefined,
+  };
+}
+
+async function maybeSingle<T>(promise: PromiseLike<{ data: T | null; error: DbError | null }>) {
+  const { data, error } = await promise;
+  if (error) {
+    console.warn('Unable to load email detail:', error.message);
+    return null;
+  }
+  return data;
+}
+
+async function sendBookingEmails({
+  supabase,
+  appointment,
+  emailDetails,
+}: {
+  supabase: ServerClient;
+  appointment: AppointmentRow;
+  emailDetails?: BookingEmailDetails;
+}) {
+  try {
+    const [profile, user, service, barber] = await Promise.all([
+      isUuid(appointment.user_id)
+        ? maybeSingle<CustomerRow>(
+            supabase
+              .from('profiles')
+              .select('id, email, full_name')
+              .eq('id', appointment.user_id)
+              .maybeSingle(),
+          )
+        : Promise.resolve(null),
+      isUuid(appointment.user_id)
+        ? maybeSingle<CustomerRow>(
+            supabase
+              .from('users')
+              .select('id, email, full_name')
+              .eq('id', appointment.user_id)
+              .maybeSingle(),
+          )
+        : Promise.resolve(null),
+      isUuid(appointment.service_id)
+        ? maybeSingle<ServiceRow>(
+            supabase
+              .from('services')
+              .select('id, name, price')
+              .eq('id', appointment.service_id)
+              .maybeSingle(),
+          )
+        : Promise.resolve(null),
+      isUuid(appointment.barber_id)
+        ? maybeSingle<BarberRow>(
+            supabase
+              .from('barbers')
+              .select('id, name')
+              .eq('id', appointment.barber_id)
+              .maybeSingle(),
+          )
+        : Promise.resolve(null),
+    ]);
+
+    const customer = profile || user;
+    const customerEmail = emailDetails?.customerEmail || customer?.email;
+
+    if (!customerEmail) {
+      console.warn(`Booking email skipped for appointment ${appointment.id}: missing customer email`);
+      return;
+    }
+
+    const details = {
+      customerName:
+        emailDetails?.customerName ||
+        customer?.full_name ||
+        customerEmail,
+      customerEmail,
+      serviceName:
+        emailDetails?.serviceName ||
+        service?.name ||
+        'Barber service',
+      barberName:
+        emailDetails?.barberName ||
+        barber?.name ||
+        'Sahil Cutzz barber',
+      startAt: appointment.start_at,
+      amountPaid:
+        typeof emailDetails?.amountPaid !== 'undefined'
+          ? emailDetails.amountPaid
+          : service?.price || 0,
+    };
+
+    await Promise.all([
+      sendMail({
+        to: details.customerEmail,
+        subject: 'Your Sahil Cutzz booking is confirmed',
+        html: bookingConfirmationHtml(details),
+      }),
+      sendMail({
+        to: process.env.ADMIN_EMAIL || 'admin@sahilcutzz.com',
+        subject: 'New Sahil Cutzz booking received',
+        html: adminBookingNotificationHtml(details),
+      }),
+    ]);
+  } catch (error) {
+    console.error('Booking email trigger failed:', error instanceof Error ? error.message : error);
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getServerClient();
     const { searchParams } = new URL(request.url);
     const barberId = searchParams.get('barberId');
     const userId = searchParams.get('userId');
@@ -14,13 +212,13 @@ export async function GET(request: NextRequest) {
     let queryBuilder = supabase.from('appointments').select('*');
 
     if (barberId) {
-      queryBuilder = queryBuilder.eq('barber_id', barberId) as any;
+      queryBuilder = queryBuilder.eq('barber_id', barberId);
     }
     if (userId) {
-      queryBuilder = queryBuilder.eq('user_id', userId) as any;
+      queryBuilder = queryBuilder.eq('user_id', userId);
     }
     if (status) {
-      queryBuilder = queryBuilder.eq('status', status) as any;
+      queryBuilder = queryBuilder.eq('status', status);
     }
 
     if (date) {
@@ -31,7 +229,7 @@ export async function GET(request: NextRequest) {
 
       queryBuilder = queryBuilder
         .gte('start_at', startOfDay.toISOString())
-        .lte('end_at', endOfDay.toISOString()) as any;
+        .lte('end_at', endOfDay.toISOString());
     }
 
     const { data, error } = await queryBuilder.order('start_at', { ascending: true });
@@ -44,71 +242,128 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = getServerClient();
     const body = await request.json();
     const isEmergency = body.is_emergency;
+    const { email_details: rawEmailDetails, ...appointmentPayload } = body;
+    const emailDetails = normalizeEmailDetails(rawEmailDetails);
+
+    // Check if payment is required (non-emergency bookings)
+    if (!isEmergency) {
+      const paymentId = appointmentPayload.payment_id;
+
+      // Verify payment exists and is completed
+      if (!paymentId) {
+        return NextResponse.json(
+          { error: 'Payment required: Please complete the advance payment of 500 PKR to confirm your booking.' },
+          { status: 400 }
+        );
+      }
+
+      // Check if payment is completed
+      const { data: paymentData, error: paymentError } = await supabase
+        .from('payments')
+        .select('id, status, user_id, amount')
+        .eq('id', paymentId)
+        .single();
+
+      if (paymentError || !paymentData) {
+        return NextResponse.json(
+          { error: 'Payment not found. Please try booking again.' },
+          { status: 400 }
+        );
+      }
+
+      // Verify payment belongs to the user
+      if (paymentData.user_id !== appointmentPayload.user_id) {
+        return NextResponse.json(
+          { error: 'Payment verification failed. This payment does not belong to your account.' },
+          { status: 403 }
+        );
+      }
+
+      // Verify payment is completed
+      if (paymentData.status !== 'completed') {
+        return NextResponse.json(
+          { error: `Payment not completed. Current status: ${paymentData.status}. Please complete the payment first.` },
+          { status: 400 }
+        );
+      }
+
+      // Verify payment amount is correct (500 PKR)
+      if (Number(paymentData.amount) < 500) {
+        return NextResponse.json(
+          { error: 'Payment amount is insufficient. Minimum advance payment is 500 PKR.' },
+          { status: 400 }
+        );
+      }
+    }
 
     if (isEmergency) {
-      // Use emergency override system
-      const result = await insertEmergencyAppointment({
-        user_id: body.user_id,
-        barber_id: body.barber_id,
-        service_id: body.service_id,
-        start_at: body.start_at,
-        end_at: body.end_at,
-        duration_minutes: body.duration_minutes,
+      const emergencyAppointment: Omit<AppointmentItem, 'id' | 'created_at' | 'updated_at'> = {
+        user_id: appointmentPayload.user_id,
+        barber_id: appointmentPayload.barber_id,
+        service_id: appointmentPayload.service_id,
+        start_at: appointmentPayload.start_at,
+        end_at: appointmentPayload.end_at,
+        duration_minutes: appointmentPayload.duration_minutes,
         status: 'emergency',
         is_emergency: true,
-        notes: body.notes || null,
-      } as any);
+        notes: appointmentPayload.notes || null,
+      };
+
+      const result = await insertEmergencyAppointment(emergencyAppointment);
 
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
 
       return NextResponse.json({ success: true, shiftedAppointments: result.shiftedAppointments });
-    } else {
-      // Regular appointment
-      const { data, error } = await supabase
-        .from('appointments')
-        .insert([body])
-        .select();
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-
-      // Create notification
-      if (data?.[0]) {
-        await supabase.from('notifications').insert([
-          {
-            user_id: body.user_id,
-            type: 'booking',
-            message: `Your appointment has been confirmed for ${new Date(body.start_at).toLocaleString()}`,
-            related_appointment_id: data[0].id,
-            read: false,
-          },
-        ]);
-      }
-
-      return NextResponse.json(data?.[0], { status: 201 });
     }
+
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert([appointmentPayload])
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    await supabase.from('notifications').insert([
+      {
+        user_id: appointmentPayload.user_id,
+        type: 'booking',
+        message: `Your appointment has been confirmed for ${new Date(appointmentPayload.start_at).toLocaleString()}`,
+        related_appointment_id: data.id,
+        read: false,
+      },
+    ]);
+
+    if (shouldSendBookingEmail(appointmentPayload.status)) {
+      await sendBookingEmails({ supabase, appointment: data as AppointmentRow, emailDetails });
+    }
+
+    return NextResponse.json(data, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
+    const supabase = getServerClient();
     const body = await request.json();
     const { id, ...updateData } = body;
 
@@ -126,7 +381,7 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

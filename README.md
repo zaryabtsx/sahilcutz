@@ -200,6 +200,21 @@ GET    /api/slots?barberId=xxx&date=2024-01-01&serviceDuration=30
 
 See [API_GUIDE.md](./API_GUIDE.md) for complete documentation.
 
+### Volzix Payments
+
+The booking flow uses Volzix hosted checkout for the PKR advance payment:
+
+1. The booking page calls `POST /api/payment/volzix/initiate` with selected service, barber, date, time, and customer details.
+2. The API creates a pending `payments` row with `provider = 'volzix'`, a unique `web_id`, and the local booking snapshot.
+3. The server signs `merchant_mid|amount|currency|web_id|payer_email|timestamp` with `VOLZIX_MERCHANT_API_KEY`.
+4. The API calls `POST https://volzix.com/auth/` and stores the returned `flow_id`.
+5. The customer is redirected to Volzix `payment_url` for JazzCash/EasyPaisa checkout.
+6. Volzix redirects the browser to `/booking/payment-status`, which polls our API/DB. Redirect params are not trusted as proof of payment.
+7. Volzix sends source-of-truth IPN updates to `POST /api/payment/volzix/ipn`.
+8. On verified `completed`, the app marks payment paid, creates the appointment once, and sends existing booking confirmation emails.
+
+Required environment variables are documented in `.env.example`. After deployment, set the Volzix merchant dashboard IPN URL to `https://sahilcutzz.com/api/payment/volzix/ipn`.
+
 ## 🧪 Test Credentials
 
 ### Admin Account

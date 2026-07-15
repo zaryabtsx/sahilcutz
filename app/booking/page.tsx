@@ -4,17 +4,19 @@
 //  app/booking/page.tsx
 // ─────────────────────────────────────────────────────────────
 
-import { Suspense, useEffect, useState, useMemo, useCallback } from 'react';
+import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { isAuthenticated, getSession } from '@/lib/auth';
 import { initialServices } from '@/lib/mockData';
 import { getServiceCategoryName, sortCategoryEntries } from '@/lib/serviceCategories';
+import { getAdvancePaymentAmount } from '@/lib/volzix';
 import type { UserProfile } from '@/lib/types';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Loader2,
   Clock, Scissors, Calendar, ChevronDown, ChevronLeft, ChevronRight,
+  CreditCard, Lock, ShieldCheck,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -56,6 +58,20 @@ interface BookedAppt {
   duration_minutes: number;
   status: string;
 }
+
+interface PendingBookingSnapshot {
+  selectedServices: Service[];
+  selectedSlot: ComputedSlot;
+  selectedDate: string;
+  selectedBarber: string;
+  customerPhone: string;
+  selectedPrice: number;
+  selectedDuration: number;
+  selectedServiceNames: string;
+  barberName: string;
+}
+
+const PENDING_BOOKING_PAYMENT_KEY = 'sahilcutz:pending-booking-payment';
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -243,6 +259,8 @@ function BookingPageContent() {
   const [submitting, setSubmitting]   = useState(false);
   const [bookingDone, setBookingDone] = useState(false);
   const [error, setError]             = useState('');
+  const handledPaymentRef = useRef<string | null>(null);
+  const advanceAmount = getAdvancePaymentAmount();
 
   const servicesParamKey = searchParams.getAll('services').join(',');
   const requestedServiceTokens = useMemo(
@@ -397,51 +415,74 @@ function BookingPageContent() {
     );
   };
 
-  // ── Submit booking ──
-  const submitBooking = async () => {
-    if (!selectedServices.length || !selectedSlot || !user) return;
+  const buildPaymentSnapshot = (): PendingBookingSnapshot | null => {
+    if (!selectedServices.length || !selectedSlot) return null;
+
+    return {
+      selectedServices,
+      selectedSlot,
+      selectedDate,
+      selectedBarber,
+      customerPhone: customerPhone.trim(),
+      selectedPrice,
+      selectedDuration,
+      selectedServiceNames,
+      barberName: barbers.find(b => b.id === selectedSlot.barber_id)?.name ?? '—',
+    };
+  };
+
+  const completePaidBooking = useCallback(async (paymentId: string, snapshot: PendingBookingSnapshot) => {
+    if (!user) return;
     setError('');
-    if (!customerPhone.trim()) {
-      setError('Please enter your phone number so the barber can contact you about this booking.');
-      return;
-    }
     setSubmitting(true);
 
-    // Snapshot before loadSlotsForDate resets selectedSlot to null
-    const bookedSlot        = selectedSlot;
-    const bookedServices    = selectedServices;
-    const primaryService    = bookedServices[0];
-    const bookedDuration    = bookedServices.reduce((total, service) => total + Number(service.duration_minutes || 0), 0);
-    const bookedDate        = selectedDate;
-    const bookedBarberName  = barbers.find(b => b.id === selectedSlot.barber_id)?.name ?? '—';
-    const startAt           = new Date(`${bookedDate}T${bookedSlot.start_time}:00`).toISOString();
-    const endAt             = new Date(`${bookedDate}T${bookedSlot.end_time}:00`).toISOString();
+    const bookedSlot = snapshot.selectedSlot;
+    const bookedServices = snapshot.selectedServices;
+    const primaryService = bookedServices[0];
+    const bookedDuration = snapshot.selectedDuration;
+    const bookedDate = snapshot.selectedDate;
+    const bookedBarberName = snapshot.barberName;
+    const startAt = new Date(`${bookedDate}T${bookedSlot.start_time}:00`).toISOString();
+    const endAt = new Date(`${bookedDate}T${bookedSlot.end_time}:00`).toISOString();
 
     try {
-      const uid = user.id;
-
       const { error: profileErr } = await supabase.from('profiles').upsert({
-        id: uid,
+        id: user.id,
         full_name: user.full_name || user.email || 'Customer',
         email: user.email,
-        phone: customerPhone.trim(),
+        phone: snapshot.customerPhone,
       }, { onConflict: 'id' });
 
       if (profileErr) {
         console.warn('Unable to sync booking profile:', profileErr.message);
       }
 
-      const { error: apptErr } = await supabase.from('appointments').insert({
-        user_id:          uid,
-        service_id:       primaryService.id,
-        start_at:         startAt,
-        end_at:           endAt,
-        duration_minutes: bookedDuration,
-        barber_id:        bookedSlot.barber_id,
-        is_emergency:     false,
-        status:           'Upcoming',
+      const apptRes = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id:          user.id,
+          service_id:       primaryService.id,
+          start_at:         startAt,
+          end_at:           endAt,
+          duration_minutes: bookedDuration,
+          barber_id:        bookedSlot.barber_id,
+          is_emergency:     false,
+          status:           'Upcoming',
+          payment_id:       paymentId,
+          email_details: {
+            customerEmail: user.email,
+            customerName: user.full_name || user.email,
+            serviceName: snapshot.selectedServiceNames,
+            barberName: bookedBarberName,
+            amountPaid: snapshot.selectedPrice,
+          },
+        }),
       });
-      if (apptErr) throw apptErr;
+      if (!apptRes.ok) {
+        const payload = await apptRes.json().catch(() => ({}));
+        throw new Error(payload.error || 'Unable to create appointment.');
+      }
 
       // Refresh slots — this resets selectedSlot, but we already snapshotted above
       await loadSlotsForDate(bookedDate);
@@ -452,12 +493,114 @@ function BookingPageContent() {
       setConfirmedDate(bookedDate);
       setConfirmedBarberName(bookedBarberName);
       setBookingDone(true);
+      sessionStorage.removeItem(PENDING_BOOKING_PAYMENT_KEY);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      setStep(2);
     } finally {
       setSubmitting(false);
     }
+  }, [loadSlotsForDate, user]);
+
+  const submitBooking = async () => {
+    if (!selectedServices.length || !selectedSlot || !user) return;
+    setError('');
+    if (!customerPhone.trim()) {
+      setError('Please enter your phone number so the barber can contact you about this booking.');
+      return;
+    }
+
+    const snapshot = buildPaymentSnapshot();
+    const primaryService = snapshot?.selectedServices[0];
+    if (!snapshot || !primaryService) return;
+
+    setSubmitting(true);
+
+    try {
+      sessionStorage.setItem(PENDING_BOOKING_PAYMENT_KEY, JSON.stringify(snapshot));
+
+      const paymentRes = await fetch('/api/payment/volzix/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          customerEmail: user.email,
+          customerName: user.full_name || user.email || 'Customer',
+          customerPhone: snapshot.customerPhone,
+          serviceId: primaryService.id,
+          barberId: snapshot.selectedSlot.barber_id,
+          bookingDate: snapshot.selectedDate,
+          bookingTime: snapshot.selectedSlot.start_time,
+          returnPath: '/booking/payment-status',
+        }),
+      });
+
+      if (!paymentRes.ok) {
+        const payload = await paymentRes.json().catch(() => ({}));
+        throw new Error(payload.error || 'Unable to start payment. Please try again.');
+      }
+
+      const paymentPayload = await paymentRes.json();
+      if (!paymentPayload.paymentUrl) {
+        throw new Error('No payment link was returned by Volzix. Please try again.');
+      }
+
+      window.location.href = paymentPayload.paymentUrl;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to start payment. Please try again.');
+      setSubmitting(false);
+    }
   };
+
+  useEffect(() => {
+    if (!ready || !user || bookingDone) return;
+
+    const paymentStatus = searchParams.get('paymentStatus');
+    const paymentId = searchParams.get('paymentId');
+    const orderId = searchParams.get('orderId');
+    const paymentKey = paymentId || orderId;
+
+    if (paymentStatus === 'success' && paymentId && handledPaymentRef.current !== paymentKey) {
+      handledPaymentRef.current = paymentKey;
+      queueMicrotask(() => {
+        const savedSnapshot = sessionStorage.getItem(PENDING_BOOKING_PAYMENT_KEY);
+
+        if (!savedSnapshot) {
+          setStep(2);
+          setError('Payment was completed, but the booking details were not found. Please contact support with your payment reference.');
+          return;
+        }
+
+        try {
+          const snapshot = JSON.parse(savedSnapshot) as PendingBookingSnapshot;
+          setSelectedServices(snapshot.selectedServices);
+          setSelectedSlot(snapshot.selectedSlot);
+          setSelectedDate(snapshot.selectedDate);
+          setSelectedBarber(snapshot.selectedBarber);
+          setCustomerPhone(snapshot.customerPhone);
+          setStep(2);
+          void completePaidBooking(paymentId, snapshot);
+        } catch {
+          setStep(2);
+          setError('Payment was completed, but the saved booking details could not be restored. Please contact support with your payment reference.');
+        }
+      });
+    } else if ((paymentStatus === 'failed' || paymentStatus === 'error') && handledPaymentRef.current !== paymentKey) {
+      handledPaymentRef.current = paymentKey;
+      queueMicrotask(() => {
+        setStep(2);
+        setError(paymentStatus === 'failed'
+          ? 'Payment was declined. Please try again or use a different payment method.'
+          : 'Volzix could not verify the payment. Please try again.');
+      });
+    } else if (paymentStatus === 'pending' && handledPaymentRef.current !== paymentKey) {
+      handledPaymentRef.current = paymentKey;
+      queueMicrotask(() => {
+        setStep(2);
+        setError('Payment is still pending. Once Volzix confirms it, your booking will be completed automatically.');
+      });
+    }
+  }, [bookingDone, completePaidBooking, ready, searchParams, user]);
 
   const resetBooking = () => {
     setBookingDone(false);
@@ -914,10 +1057,54 @@ function BookingPageContent() {
                   </div>
 
                   {error && (
-                    <p className="mt-4 rounded-2xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">{error}</p>
+                    <div className="mt-5 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                      {error}
+                    </div>
                   )}
 
-                  <div className="mt-8 flex items-center gap-3">
+                  <div className="mt-6 rounded-[28px] border border-primary/25 bg-primary/5 p-5">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.25em] text-primary">Secure advance payment</p>
+                        <h3 className="mt-2 text-2xl font-black text-foreground">Pay Rs. {advanceAmount.toLocaleString()} to lock your slot</h3>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                          This advance confirms your appointment, protects the barber&apos;s time, and is adjusted in your final bill.
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 rounded-3xl border border-primary/25 bg-background/80 px-5 py-4 text-left lg:text-right">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Amount due now</p>
+                        <p className="mt-1 text-3xl font-black text-primary">Rs. {advanceAmount.toLocaleString()}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">via Volzix</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                      {[
+                        { title: 'Proceed to Volzix', body: 'Tap the payment button and we will send your booking details securely.', icon: CreditCard },
+                        { title: 'Complete payment', body: 'Pay the Rs. 500 advance on the protected Volzix checkout page.', icon: Lock },
+                        { title: 'Confirm booking', body: 'After Volzix confirms the payment, your appointment is created automatically.', icon: ShieldCheck },
+                      ].map(({ title, body, icon: Icon }, index) => (
+                        <div key={title} className="rounded-2xl border border-border bg-background/80 p-4">
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-black text-primary-foreground">
+                              {index + 1}
+                            </span>
+                            <Icon className="h-5 w-5 text-primary" />
+                          </div>
+                          <p className="mt-3 text-sm font-black text-foreground">{title}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">{body}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-500">
+                      <ShieldCheck className="h-4 w-4 shrink-0" />
+                      <span>Payment is processed by Volzix. Sahil Cutzz does not store card or banking details.</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                     <button
                       onClick={() => setStep(1)}
                       className="flex-1 rounded-3xl border border-border px-5 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
@@ -932,8 +1119,8 @@ function BookingPageContent() {
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all"
                     >
                       {submitting
-                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Booking…</>
-                        : <><CheckCircle className="w-4 h-4" /> Confirm Booking</>}
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting secure payment…</>
+                        : <><CreditCard className="w-4 h-4" /> Proceed to Volzix Payment <ArrowRight className="w-4 h-4" /></>}
                     </button>
                   </div>
                 </div>
