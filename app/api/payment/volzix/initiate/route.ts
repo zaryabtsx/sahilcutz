@@ -4,6 +4,8 @@ import {
   generateOrderId,
   generateWebId,
   getAdvancePaymentAmount,
+  getVolzixConfig,
+  MissingVolzixConfigError,
 } from '@/lib/volzix';
 import { getServerClient } from '@/lib/volzix-server';
 
@@ -51,6 +53,23 @@ export async function POST(request: NextRequest) {
         { error: 'Missing booking details' },
         { status: 400 },
       );
+    }
+
+    try {
+      getVolzixConfig();
+    } catch (error) {
+      if (error instanceof MissingVolzixConfigError) {
+        console.error('Volzix payment gateway is missing required environment variables:', error.missingVariables);
+        return NextResponse.json(
+          {
+            error: 'Payment gateway is not configured on the server',
+            missingVariables: error.missingVariables,
+          },
+          { status: 503 },
+        );
+      }
+
+      throw error;
     }
 
     const supabase = getServerClient();

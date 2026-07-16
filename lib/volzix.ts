@@ -45,6 +45,13 @@ export interface VolzixIpnPayload {
 
 const TEN_MINUTES_SECONDS = 10 * 60;
 
+export class MissingVolzixConfigError extends Error {
+  constructor(public readonly missingVariables: string[]) {
+    super(`Volzix payment gateway is not configured. Missing: ${missingVariables.join(', ')}`);
+    this.name = 'MissingVolzixConfigError';
+  }
+}
+
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -85,6 +92,13 @@ function timingSafeEqualHex(left: string, right: string) {
 }
 
 export function getVolzixConfig() {
+  const missingVariables = ['VOLZIX_MERCHANT_MID', 'VOLZIX_MERCHANT_API_KEY']
+    .filter((name) => !process.env[name]);
+
+  if (missingVariables.length > 0) {
+    throw new MissingVolzixConfigError(missingVariables);
+  }
+
   return {
     baseUrl: process.env.VOLZIX_BASE_URL || 'https://volzix.com',
     merchantMid: requiredEnv('VOLZIX_MERCHANT_MID'),
