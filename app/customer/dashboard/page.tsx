@@ -77,7 +77,8 @@ export default function CustomerDashboardPage() {
   const [rescheduleTarget, setRescheduleTarget] = useState<AppointmentRow | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleTime, setRescheduleTime] = useState('');
-  const [rescheduleSlots, setRescheduleSlots] = useState<Array<{ start: string; end: string; available: boolean }>>([]);
+  type RescheduleSlot = { start: string; end: string; available: boolean };
+  const [rescheduleSlots, setRescheduleSlots] = useState<RescheduleSlot[]>([]);
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [rescheduleError, setRescheduleError] = useState('');
 
@@ -152,7 +153,18 @@ export default function CustomerDashboardPage() {
         }
 
         const slots = Array.isArray(payload) ? payload : payload.slots || [];
-        setRescheduleSlots(slots);
+        const validSlotsArray = Array.isArray(slots)
+          ? slots.filter(
+              (slot): slot is RescheduleSlot =>
+                Boolean(slot) && typeof slot.start === 'string' && typeof slot.end === 'string' && typeof slot.available === 'boolean',
+            )
+          : [];
+
+        if (validSlotsArray.length !== (Array.isArray(slots) ? slots.length : 0)) {
+          console.warn('Reschedule slots response contained invalid items', { slots });
+        }
+
+        setRescheduleSlots(validSlotsArray);
       } catch (err) {
         setRescheduleSlots([]);
         setRescheduleError(err instanceof Error ? err.message : 'Unable to load available times.');
@@ -205,8 +217,8 @@ export default function CustomerDashboardPage() {
 
     try {
       const selectedSlot = rescheduleSlots.find((slot) => slot.start === rescheduleTime);
-      if (!selectedSlot) {
-        throw new Error('Please choose a valid time slot.');
+      if (!selectedSlot || typeof selectedSlot.start !== 'string' || typeof selectedSlot.end !== 'string') {
+        throw new Error('Please choose a valid available time slot.');
       }
 
       const response = await fetch('/api/customer/appointments', {
@@ -541,16 +553,20 @@ export default function CustomerDashboardPage() {
       {rescheduleTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-xl rounded-[32px] border border-border bg-card p-6 shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-3">
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full max-w-xl sm:max-w-2xl mx-4 rounded-[32px] border border-border bg-card p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+            >
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-primary">Reschedule appointment</p>
                 <h3 className="mt-2 text-2xl font-black text-foreground">Pick a new time</h3>
+                <p className="mt-2 text-sm text-muted-foreground max-w-xl">
+                  Choose another date and an available slot. The system will keep the same barber and service duration so your appointment stays consistent.
+                </p>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setRescheduleTarget(null);
                   setRescheduleDate('');
@@ -559,9 +575,32 @@ export default function CustomerDashboardPage() {
                   setRescheduleError('');
                 }}
                 className="rounded-full border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Close reschedule popup"
               >
                 <XCircle className="h-4 w-4" />
               </button>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-3xl border border-border bg-background/90 p-4">
+                <p className="text-[11px] uppercase tracking-[0.35em] text-muted-foreground">Current appointment</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {new Date(rescheduleTarget.start_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+                </p>
+              </div>
+              <div className="rounded-3xl border border-border bg-background/90 p-4">
+                <p className="text-[11px] uppercase tracking-[0.35em] text-muted-foreground">Duration</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">{rescheduleTarget.duration_minutes} minutes</p>
+              </div>
+              <div className="rounded-3xl border border-border bg-background/90 p-4">
+                <p className="text-[11px] uppercase tracking-[0.35em] text-muted-foreground">Barber</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">{rescheduleTarget.barber_id}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-3xl border border-border bg-slate-50/70 px-4 py-3 text-sm text-slate-700">
+              <strong className="block text-sm text-foreground">Tip:</strong>
+              Tap any available time below to select it. Booked slots appear dimmed and cannot be selected.
             </div>
 
             <div className="mt-6 space-y-4">
@@ -578,6 +617,11 @@ export default function CustomerDashboardPage() {
                 />
               </label>
 
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-semibold text-foreground">Available times</p>
+                <p className="text-sm text-muted-foreground">{rescheduleSlots.length} slots</p>
+              </div>
+
               {rescheduleLoading ? (
                 <div className="flex items-center justify-center rounded-3xl border border-border bg-background/80 py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -588,37 +632,56 @@ export default function CustomerDashboardPage() {
                 </div>
               ) : rescheduleSlots.length > 0 ? (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {rescheduleSlots.map((slot) => {
-                    const isBooked = slot.available === false;
-                    const isSelected = rescheduleTime === slot.start;
-                    return (
-                      <button
-                        key={slot.start}
-                        disabled={isBooked}
-                        onClick={() => setRescheduleTime(slot.start)}
-                        className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition-all ${
-                          isBooked
-                            ? 'cursor-not-allowed border-border/60 bg-muted/40 text-muted-foreground'
-                            : isSelected
-                              ? 'border-primary bg-primary/10 text-foreground'
-                              : 'border-border bg-background/90 text-foreground hover:border-primary/40'
-                        }`}
-                      >
-                        {new Date(slot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                        {isBooked && ' • Booked'}
-                      </button>
-                    );
-                  })}
+                  {rescheduleSlots
+                    .filter((slot): slot is RescheduleSlot =>
+                      Boolean(slot) && typeof slot.start === 'string' && typeof slot.end === 'string',
+                    )
+                    .map((slot, index) => {
+                      const isBooked = slot.available === false;
+                      const isSelected = rescheduleTime === slot.start;
+                      return (
+                        <button
+                          key={slot.start || `slot-${index}`}
+                          type="button"
+                          disabled={isBooked}
+                          onClick={() => slot.start && setRescheduleTime(slot.start)}
+                          className={`rounded-3xl border px-4 py-4 text-left text-sm font-semibold transition-all shadow-sm ${
+                            isBooked
+                              ? 'cursor-not-allowed border-border/60 bg-muted/10 text-muted-foreground'
+                              : isSelected
+                                ? 'border-primary bg-primary/10 text-foreground shadow-outline-primary'
+                                : 'border-border bg-background/95 text-foreground hover:border-primary/40 hover:shadow-md'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-base font-semibold text-foreground">
+                              {slot.start ? new Date(slot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Invalid slot'}
+                            </span>
+                            {isSelected && <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-bold uppercase text-primary">Selected</span>}
+                          </div>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {slot.end ? `Until ${new Date(slot.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
+                          </p>
+                          {isBooked && (
+                            <p className="mt-3 inline-flex rounded-full border border-destructive/20 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                              Booked
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
                 </div>
               ) : (
-                <div className="rounded-3xl border border-border bg-background/80 p-4 text-sm text-muted-foreground">
-                  No open slots are available for this date yet.
+                <div className="rounded-3xl border border-border bg-background/80 p-6 text-sm text-muted-foreground">
+                  <p className="font-semibold text-foreground">No open slots available</p>
+                  <p className="mt-2">Try a different date or contact support if you need help rescheduling.</p>
                 </div>
               )}
             </div>
 
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button
+                type="button"
                 onClick={() => {
                   setRescheduleTarget(null);
                   setRescheduleDate('');
@@ -628,12 +691,13 @@ export default function CustomerDashboardPage() {
                 }}
                 className="rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
-                Close
+                Cancel
               </button>
               <button
+                type="button"
                 onClick={submitReschedule}
-                disabled={!rescheduleTime || actionBusyId === rescheduleTarget.id}
-                className="rounded-2xl bg-gradient-to-r from-primary to-accent px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors disabled:opacity-50"
+                disabled={!rescheduleTime || actionBusyId === rescheduleTarget.id || !rescheduleSlots.some((slot) => slot.start === rescheduleTime)}
+                className="rounded-2xl bg-gradient-to-r from-primary to-accent px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {actionBusyId === rescheduleTarget.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save new time'}
               </button>

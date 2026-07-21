@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable prefer-const */
 import { supabase } from './supabase';
 import { isLastTwoDaysOfMonth } from './scheduling';
@@ -24,17 +26,22 @@ export async function generateAvailableSlots(
   serviceDurationMinutes: number,
   bufferMinutes: number = 0
 ): Promise<TimeSlot[]> {
+  const barberProfile = await getBarberProfile(barberId);
+  if (!barberProfile || !barberProfile.working_hours) {
+    return [];
+  }
+
+  const workingHours = barberProfile.working_hours;
+  if (!workingHours.start || !workingHours.end) {
+    return [];
+  }
+
   // Parse the date in local timezone
   const localDate = new Date(date);
-  localDate.setHours(0, 0, 0, 0);
+  localDate.setHours(0, 0, 0, 0); 
 
-  // Get barber working hours
-  const barber = await getBarberProfile(barberId);
-  if (!barber) return [];
-
-  const workingHours = barber.working_hours;
-  const [workStartHour, workStartMin] = workingHours.start.split(':').map(Number);
-  const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
+const [workStartHour, workStartMin] = workingHours.start.split(':').map(Number);
+const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
 
   // Get day of week for breaks
   const dayOfWeek = localDate.toLocaleString('en-US', { weekday: 'short' });

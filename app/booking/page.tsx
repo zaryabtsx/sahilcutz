@@ -13,6 +13,7 @@ import { initialServices } from '@/lib/mockData';
 import { isLastTwoDaysOfMonth } from '@/lib/scheduling';
 import { getServiceCategoryName, sortCategoryEntries } from '@/lib/serviceCategories';
 import { getAdvancePaymentAmount } from '@/lib/volzix';
+import { getPaymentMethodOptions, isBankTransferPaymentMethod } from '@/lib/paymentMethodConfig';
 import type { UserProfile } from '@/lib/types';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Loader2,
@@ -258,6 +259,7 @@ function BookingPageContent() {
   const [selectedServices, setSelectedServices] = useState<Service[]>([]);
   const [openCategories, setOpenCategories] = useState<string[]>([]);
   const [selectedDate, setSelectedDate]       = useState<string>(isoDate(new Date()));
+  const [paymentMethod, setPaymentMethod] = useState<'volzix' | 'bank_transfer'>('volzix');
   const [selectedSlot, setSelectedSlot]       = useState<ComputedSlot | null>(null);
   const [selectedBarber, setSelectedBarber]   = useState<string>('');
 
@@ -451,7 +453,7 @@ function BookingPageContent() {
     };
   };
 
-  const completePaidBooking = useCallback(async (paymentId: string, snapshot: PendingBookingSnapshot) => {
+  const completePaidBooking = useCallback(async (paymentId: string, snapshot: PendingBookingSnapshot, method: 'volzix' | 'bank_transfer' = 'volzix') => {
     if (!user) return;
     setError('');
     setSubmitting(true);
@@ -477,27 +479,34 @@ function BookingPageContent() {
         console.warn('Unable to sync booking profile:', profileErr.message);
       }
 
+      const appointmentBody = {
+        user_id:          user.id,
+        service_id:       primaryService.id,
+        start_at:         startAt,
+        end_at:           endAt,
+        duration_minutes: bookedDuration,
+        barber_id:        bookedSlot.barber_id,
+        is_emergency:     false,
+        status:           'Upcoming',
+        payment_id:       paymentId,
+        payment_method:   method,
+        email_details: {
+          customerEmail: user.email,
+          customerName: user.full_name || user.email,
+          serviceName: snapshot.selectedServiceNames,
+          barberName: bookedBarberName,
+          amountPaid: snapshot.selectedPrice,
+        },
+      } as const;
+
+      // Debug log to inspect payload when API returns 400
+      // eslint-disable-next-line no-console
+      console.log('Creating appointment with payload:', appointmentBody);
+
       const apptRes = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id:          user.id,
-          service_id:       primaryService.id,
-          start_at:         startAt,
-          end_at:           endAt,
-          duration_minutes: bookedDuration,
-          barber_id:        bookedSlot.barber_id,
-          is_emergency:     false,
-          status:           'Upcoming',
-          payment_id:       paymentId,
-          email_details: {
-            customerEmail: user.email,
-            customerName: user.full_name || user.email,
-            serviceName: snapshot.selectedServiceNames,
-            barberName: bookedBarberName,
-            amountPaid: snapshot.selectedPrice,
-          },
-        }),
+        body: JSON.stringify(appointmentBody),
       });
       if (!apptRes.ok) {
         const payload = await apptRes.json().catch(() => ({}));
@@ -538,6 +547,12 @@ function BookingPageContent() {
 
     try {
       sessionStorage.setItem(PENDING_BOOKING_PAYMENT_KEY, JSON.stringify(snapshot));
+
+      if (isBankTransferPaymentMethod(paymentMethod)) {
+        const paymentId = `bank-transfer-${Date.now()}`;
+        await completePaidBooking(paymentId, snapshot, paymentMethod);
+        return;
+      }
 
       const paymentRes = await fetch('/api/payment/volzix/initiate', {
         method: 'POST',
@@ -600,7 +615,7 @@ function BookingPageContent() {
           setSelectedBarber(snapshot.selectedBarber);
           setCustomerPhone(snapshot.customerPhone);
           setStep(2);
-          void completePaidBooking(paymentId, snapshot);
+          void completePaidBooking(paymentId, snapshot, 'volzix');
         } catch {
           setStep(2);
           setError('Payment was completed, but the saved booking details could not be restored. Please contact support with your payment reference.');
@@ -1111,8 +1126,8 @@ function BookingPageContent() {
                   <div className="mt-6 rounded-[28px] border border-primary/25 bg-primary/5 p-5">
                     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.25em] text-primary">Secure advance payment</p>
-                        <h3 className="mt-2 text-2xl font-black text-foreground">Pay Rs. {advanceAmount.toLocaleString()} to lock your slot</h3>
+                        <p className="text-xs uppercase tracking-[0.25em] text-primary">Advance payment</p>
+                        <h3 className="mt-2 text-2xl font-black text-foreground">Choose how you want to lock your slot</h3>
                         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
                           This advance confirms your appointment, protects the barber&apos;s time, and is adjusted in your final bill.
                         </p>
@@ -1121,15 +1136,40 @@ function BookingPageContent() {
                       <div className="shrink-0 rounded-3xl border border-primary/25 bg-background/80 px-5 py-4 text-left lg:text-right">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Amount due now</p>
                         <p className="mt-1 text-3xl font-black text-primary">Rs. {advanceAmount.toLocaleString()}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">via Volzix</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{paymentMethod === 'bank_transfer' ? 'via bank transfer' : 'via Volzix'}</p>
                       </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3">
+                      {getPaymentMethodOptions().map((option) => {
+                        const isSelected = paymentMethod === option.value;
+                        return (
+                          <label
+                            key={option.value}
+                            className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-all ${isSelected ? 'border-primary bg-primary/10 shadow-sm' : 'border-border bg-background/80'}`}
+                          >
+                            <input
+                              type="radio"
+                              name="payment-method"
+                              value={option.value}
+                              checked={isSelected}
+                              onChange={() => setPaymentMethod(option.value)}
+                              className="mt-1 h-4 w-4 border-border text-primary focus:ring-primary"
+                            />
+                            <div>
+                              <p className="text-sm font-black text-foreground">{option.label}</p>
+                              <p className="mt-1 text-xs leading-5 text-muted-foreground">{option.description}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
 
                     <div className="mt-5 grid gap-3 md:grid-cols-3">
                       {[
-                        { title: 'Proceed to Volzix', body: 'Tap the payment button and we will send your booking details securely.', icon: CreditCard },
-                        { title: 'Complete payment', body: 'Pay the Rs. 500 advance on the protected Volzix checkout page.', icon: Lock },
-                        { title: 'Confirm booking', body: 'After Volzix confirms the payment, your appointment is created automatically.', icon: ShieldCheck },
+                        { title: 'Secure online payment', body: 'Pay the advance through Volzix using JazzCash or card-based options.', icon: CreditCard },
+                        { title: 'Bank transfer', body: 'Transfer the advance to the provided bank account and we will confirm your booking manually.', icon: Lock },
+                        { title: 'Confirm booking', body: 'Your appointment is created automatically once the booking is confirmed.', icon: ShieldCheck },
                       ].map(({ title, body, icon: Icon }, index) => (
                         <div key={title} className="rounded-2xl border border-border bg-background/80 p-4">
                           <div className="flex items-center gap-3">
@@ -1146,7 +1186,7 @@ function BookingPageContent() {
 
                     <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-500">
                       <ShieldCheck className="h-4 w-4 shrink-0" />
-                      <span>Payment is processed by Volzix. Sahil Cutz does not store card or banking details.</span>
+                      <span>{paymentMethod === 'bank_transfer' ? 'Bank transfer is available for appointments booked directly with us.' : 'Payment is processed by Volzix. Sahil Cutz does not store card or banking details.'}</span>
                     </div>
                   </div>
 
@@ -1165,8 +1205,8 @@ function BookingPageContent() {
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all"
                     >
                       {submitting
-                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting secure payment…</>
-                        : <><CreditCard className="w-4 h-4" /> Proceed to Volzix Payment <ArrowRight className="w-4 h-4" /></>}
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> {paymentMethod === 'bank_transfer' ? 'Confirming booking…' : 'Starting secure payment…'}</>
+                        : <><CreditCard className="w-4 h-4" /> {paymentMethod === 'bank_transfer' ? 'Confirm Booking' : 'Proceed to Volzix Payment'} <ArrowRight className="w-4 h-4" /></>}
                     </button>
                   </div>
                 </div>

@@ -6,8 +6,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const barberId = searchParams.get('barberId');
     const date = searchParams.get('date');
-    const serviceDuration = parseInt(searchParams.get('serviceDuration') || '30', 10);
+    const rawServiceDuration = searchParams.get('serviceDuration');
+    const serviceDuration = Number(rawServiceDuration);
     const type = searchParams.get('type'); // 'slots' or 'dates'
+
+    const normalizedServiceDuration = Number.isFinite(serviceDuration) && serviceDuration > 0
+      ? serviceDuration
+      : 30;
 
     if (!barberId) {
       return NextResponse.json(
@@ -17,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === 'dates') {
-      const availableDates = await getAvailableDates(barberId, serviceDuration, 30);
+      const availableDates = await getAvailableDates(barberId, normalizedServiceDuration, 30);
       return NextResponse.json({ availableDates });
     }
 
@@ -28,7 +33,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const slots = await generateAvailableSlots(barberId, date, serviceDuration);
+    const slots = await generateAvailableSlots(barberId, date, normalizedServiceDuration);
     return NextResponse.json({ slots });
   } catch (error) {
     return NextResponse.json(
