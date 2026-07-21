@@ -46,7 +46,7 @@ export function CtaBanner2() {
             grooming experience
           </span>
           <span className="block text-sm sm:text-base lg:text-lg tracking-[.35em] uppercase text-muted-foreground font-normal not-italic mt-2">
-            The Sahil Cutzz Ritual
+            The Sahil Cutz Ritual
           </span>
         </h2>
 

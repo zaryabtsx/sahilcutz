@@ -1,8 +1,8 @@
 import { PolicyLayout, PolicySection } from '@/components/legal/Policylayout';
 
 export const metadata = {
-  title: 'Privacy Policy | Sahil Cutzz',
-  description: 'How Sahil Cutzz collects, uses, and protects your personal information.',
+  title: 'Privacy Policy | Sahil Cutz',
+  description: 'How Sahil Cutz collects, uses, and protects your personal information.',
 };
 
 export default function PrivacyPolicyPage() {
@@ -24,7 +24,7 @@ export default function PrivacyPolicyPage() {
       </PolicySection>
 
       <PolicySection number="03" title="Payment Information">
-        <p>All online payments are processed through licensed third-party payment gateways. These providers handle your payment details under their own security standards, and Sahil Cutzz never sees or stores your full card number, CVV, or banking credentials.</p>
+        <p>All online payments are processed through licensed third-party payment gateways. These providers handle your payment details under their own security standards, and Sahil Cutz never sees or stores your full card number, CVV, or banking credentials.</p>
       </PolicySection>
 
       <PolicySection number="04" title="Sharing Your Information">

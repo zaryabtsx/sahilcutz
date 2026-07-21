@@ -47,9 +47,9 @@ export function LoginForm() {
 
   return (
     <AuthCard
-      title="Sign in to Sahil Cutzz"
+      title="Sign in to Sahil Cutz"
       description="Access the premium barber management SaaS with fast role-aware login."
-      footer={<p>New to Sahil Cutzz? <a href="/auth/signup" className="text-primary hover:text-accent">Create an account</a></p>}
+      footer={<p>New to Sahil Cutz? <a href="/auth/signup" className="text-primary hover:text-accent">Create an account</a></p>}
     >
       {error && (
         <motion.div

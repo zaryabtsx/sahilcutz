@@ -11,7 +11,7 @@ export const ADMIN_CREDENTIALS = {
   email: 'admin@sahilcutzz.com',
   password: 'admin123',
   role: 'admin' as UserRole,
-  fullName: 'Sahil Cutzz',
+  fullName: 'Sahil Cutz',
 };
 
 // ─── Browser Guard ────────────────────────────────────────────────────────────
@@ -71,7 +71,10 @@ export function clearAdminToken(): void {
 async function rehydrateFromSupabase(): Promise<boolean> {
   try {
     const { data } = await supabase.auth.getSession();
-    if (!data.session) return false;
+    if (!data.session) {
+      clearSession();
+      return false;
+    }
 
     const user = data.session.user;
     const meta = user.user_metadata ?? {};
@@ -95,20 +98,29 @@ async function rehydrateFromSupabase(): Promise<boolean> {
     });
     return true;
   } catch {
+    clearSession();
     return false;
   }
 }
 
 // ─── isAuthenticated (async) ──────────────────────────────────────────────────
 export async function isAuthenticated(): Promise<boolean> {
-  if (getSession()) return true;
-  return rehydrateFromSupabase();
+  if (!getSession()) {
+    return rehydrateFromSupabase();
+  }
+
+  const ok = await rehydrateFromSupabase();
+  return ok;
 }
 
 // ─── isAdminAuthenticated (async) ─────────────────────────────────────────────
 export async function isAdminAuthenticated(): Promise<boolean> {
   const session = getSession();
-  if (session?.user.role === 'admin') return true;
+  if (session?.user.role === 'admin') {
+    const ok = await rehydrateFromSupabase();
+    return ok && getSession()?.user.role === 'admin';
+  }
+
   if (getAdminToken() === 'admin_verified') return true;
 
   const ok = await rehydrateFromSupabase();

@@ -1,21 +1,21 @@
 import { PolicyLayout, PolicySection } from '@/components/legal/Policylayout';
 
 export const metadata = {
-  title: 'About Us | Sahil Cutzz',
-  description: 'Learn about Sahil Cutzz, our grooming standards, booking experience, and client care.',
+  title: 'About Us | Sahil Cutz',
+  description: 'Learn about Sahil Cutz, our grooming standards, booking experience, and client care.',
 };
 
 export default function AboutPage() {
   return (
     <PolicyLayout
       icon="scissors"
-      eyebrow="About Sahil Cutzz"
+      eyebrow="About Sahil Cutz"
       title="About Us"
-      subtitle="Sahil Cutzz is built around careful grooming, clear booking, and a calm shop experience from start to finish."
+      subtitle="Sahil Cutz is built around careful grooming, clear booking, and a calm shop experience from start to finish."
       lastUpdated="June 27, 2026"
     >
       <PolicySection number="01" title="Who We Are">
-        <p>Sahil Cutzz is a premium barber experience focused on sharp cuts, clean beard work, thoughtful styling, and dependable appointment management.</p>
+        <p>Sahil Cutz is a premium barber experience focused on sharp cuts, clean beard work, thoughtful styling, and dependable appointment management.</p>
       </PolicySection>
 
       <PolicySection number="02" title="How We Work">

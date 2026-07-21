@@ -53,7 +53,7 @@ export function AdminAuthCard({ onSuccess }: AdminAuthCardProps) {
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-red-500 font-semibold">Restricted Access</p>
           <h1 className="mt-1 text-3xl font-black text-foreground">Admin Login</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Sahil Cutzz Command Center</p>
+          <p className="mt-1 text-sm text-muted-foreground">Sahil Cutz Command Center</p>
         </div>
       </div>
 

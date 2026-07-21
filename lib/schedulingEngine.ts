@@ -1,5 +1,6 @@
 /* eslint-disable prefer-const */
 import { supabase } from './supabase';
+import { isLastTwoDaysOfMonth } from './scheduling';
 import type { AppointmentItem, BarberProfile, ServiceItem } from './types';
 
 interface TimeSlot {
@@ -38,8 +39,10 @@ export async function generateAvailableSlots(
   // Get day of week for breaks
   const dayOfWeek = localDate.toLocaleString('en-US', { weekday: 'short' });
   const isOffDay = workingHours.off_days?.includes(dayOfWeek);
+  const manualWindows = await getManualAvailabilityWindows(barberId, date);
+  const isClosedByDefault = !manualWindows.length && isLastTwoDaysOfMonth(date);
 
-  if (isOffDay) {
+  if (isOffDay || isClosedByDefault) {
     return [];
   }
 
@@ -48,40 +51,48 @@ export async function generateAvailableSlots(
 
   const slots: TimeSlot[] = [];
   const slotDuration = 15; // 15-minute intervals
+  const windows = manualWindows.length
+    ? manualWindows
+    : [{ start_time: workingHours.start, end_time: workingHours.end }];
 
-  let currentTime = new Date(localDate);
-  currentTime.setHours(workStartHour, workStartMin, 0, 0);
+  for (const window of windows) {
+    const [windowStartHour, windowStartMin] = window.start_time.split(':').map(Number);
+    const [windowEndHour, windowEndMin] = window.end_time.split(':').map(Number);
 
-  const endTime = new Date(localDate);
-  endTime.setHours(workEndHour, workEndMin, 0, 0);
+    let currentTime = new Date(localDate);
+    currentTime.setHours(windowStartHour, windowStartMin, 0, 0);
 
-  while (currentTime < endTime) {
-    const slotEnd = new Date(currentTime);
-    slotEnd.setMinutes(slotEnd.getMinutes() + serviceDurationMinutes + bufferMinutes);
+    const endTime = new Date(localDate);
+    endTime.setHours(windowEndHour, windowEndMin, 0, 0);
 
-    if (slotEnd > endTime) break;
+    while (currentTime < endTime) {
+      const slotEnd = new Date(currentTime);
+      slotEnd.setMinutes(slotEnd.getMinutes() + serviceDurationMinutes + bufferMinutes);
 
-    // Check if slot is during break
-    const isBreak = isTimeInBreak(currentTime, workingHours.breaks || []);
-    if (isBreak) {
+      if (slotEnd > endTime) break;
+
+      // Check if slot is during break
+      const isBreak = isTimeInBreak(currentTime, workingHours.breaks || []);
+      if (isBreak) {
+        currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
+        continue;
+      }
+
+      // Check for conflicts
+      const hasConflict = existingAppointments.some((apt) => {
+        const aptStart = new Date(apt.start_at);
+        const aptEnd = new Date(apt.end_at);
+        return !(slotEnd <= aptStart || currentTime >= aptEnd);
+      });
+
+      slots.push({
+        start: currentTime.toISOString(),
+        end: slotEnd.toISOString(),
+        available: !hasConflict,
+      });
+
       currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
-      continue;
     }
-
-    // Check for conflicts
-    const hasConflict = existingAppointments.some((apt) => {
-      const aptStart = new Date(apt.start_at);
-      const aptEnd = new Date(apt.end_at);
-      return !(slotEnd <= aptStart || currentTime >= aptEnd);
-    });
-
-    slots.push({
-      start: currentTime.toISOString(),
-      end: slotEnd.toISOString(),
-      available: !hasConflict,
-    });
-
-    currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
   }
 
   return slots;
@@ -215,6 +226,24 @@ async function getConflictingAppointments(
 
   if (error) return [];
   return data || [];
+}
+
+async function getManualAvailabilityWindows(
+  barberId: string,
+  date: string
+): Promise<Array<{ start_time: string; end_time: string }>> {
+  const { data, error } = await supabase
+    .from('slots')
+    .select('start_time, end_time')
+    .eq('barber_id', barberId)
+    .eq('slot_date', date)
+    .eq('is_available', true);
+
+  if (error) return [];
+  return (data ?? []).map((row: any) => ({
+    start_time: row.start_time,
+    end_time: row.end_time,
+  }));
 }
 
 async function getAppointmentsByDateAndBarber(

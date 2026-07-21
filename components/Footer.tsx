@@ -99,7 +99,7 @@ export function Footer() {
                 <Scissors className="w-5 h-5 text-primary-foreground" />
               </div>
               <span className="text-xl font-black bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent tracking-tight">
-                Sahil Cutzz
+                Sahil Cutz
               </span>
             </div>
 
@@ -200,7 +200,7 @@ export function Footer() {
             </ul>
           </motion.div>
 
-          {/* Contact Info */}
+          {/* Map */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -210,9 +210,46 @@ export function Footer() {
           >
             <h3 className="text-xs font-bold text-foreground uppercase tracking-widest mb-5 flex items-center gap-2">
               <span className="w-4 h-px bg-primary inline-block" />
-              Contact Info
+              Find Us
             </h3>
-            <ul className="space-y-4">
+            <div className="rounded-2xl border border-border/70 bg-card/60 p-2 shadow-sm shadow-black/5">
+              <iframe
+                src="https://www.google.com/maps?q=P%201024%2F4%20USMAN%20PLAZA%20GROUND%20FLOOR%20MIAN%20ASGHAR%20MALL%20ROAD%20RAWALPINDI&z=15&output=embed"
+                title="Sahil Cutz location"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                className="h-44 w-full rounded-xl border-0"
+              />
+              <a
+                href="https://www.google.com/maps/search/?api=1&query=P%201024%2F4%20USMAN%20PLAZA%20GROUND%20FLOOR%20MIAN%20ASGHAR%20MALL%20ROAD%20RAWALPINDI"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center text-xs font-semibold text-primary hover:text-primary/80"
+              >
+                Open in Google Maps →
+              </a>
+            </div>
+          </motion.div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.3, duration: 0.6 }}
+          className="border-t border-border/70 pt-8 pb-4"
+        >
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-foreground uppercase tracking-widest flex items-center gap-2">
+                <span className="w-4 h-px bg-primary inline-block" />
+                Contact Info
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Visit us at P 1024/4 Usman Plaza, Ground Floor, Mian Asghar Mall Road, Rawalpindi.
+              </p>
+            </div>
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {contactItems.map(({ icon: Icon, lines }, i) => (
                 <motion.li
                   key={i}
@@ -220,9 +257,9 @@ export function Footer() {
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: 0.35 + i * 0.08, duration: 0.4 }}
-                  className="flex items-start gap-3"
+                  className="flex items-start gap-3 rounded-2xl border border-border/60 bg-card/50 px-4 py-3"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                     <Icon className="w-3.5 h-3.5 text-primary" />
                   </div>
                   <div className="space-y-0.5">
@@ -233,42 +270,11 @@ export function Footer() {
                 </motion.li>
               ))}
             </ul>
-          </motion.div>
-        </div>
-
-        {/* Newsletter */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.3, duration: 0.6 }}
-          className="border-t border-border pt-8 pb-8"
-        >
-          <div className="bg-card/50 backdrop-blur-xl rounded-2xl p-6 border border-border/60 flex flex-col md:flex-row items-center gap-6">
-            {/* Left */}
-            <div className="flex-shrink-0">
-              <p className="text-xs text-primary font-semibold uppercase tracking-widest mb-1">Newsletter</p>
-              <h4 className="text-base font-bold text-foreground">Exclusive Offers & Grooming Tips</h4>
-              <p className="text-xs text-muted-foreground mt-0.5">Join our list — no spam, ever.</p>
-            </div>
-
-            {/* Input */}
-            <div className="flex gap-2 flex-1 w-full md:w-auto">
-              <input
-                type="email"
-                placeholder="your@email.com"
-                className="flex-1 px-4 py-2.5 bg-background border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors duration-300"
-              />
-              <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:shadow-primary/40 transition-shadow duration-300 whitespace-nowrap"
-              >
-                Subscribe
-              </motion.button>
-            </div>
           </div>
         </motion.div>
+
+        {/* Newsletter */}
+       
 
         {/* Bottom bar */}
         <motion.div
@@ -279,7 +285,7 @@ export function Footer() {
           className="py-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3"
         >
           <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Sahil Cutzz. All rights reserved.
+            © {new Date().getFullYear()} Sahil Cutz. All rights reserved.
           </p>
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span>Crafted with</span>

@@ -50,7 +50,7 @@ export function SignupForm() {
 
   return (
     <AuthCard
-      title="Create your Sahil Cutzz account"
+      title="Create your Sahil Cutz account"
       description="Start managing appointments, barbers, and premium bookings with a luxury dashboard."
       footer={<p>Already have an account? <a href="/auth/login" className="text-primary hover:text-accent">Sign in</a></p>}
     >

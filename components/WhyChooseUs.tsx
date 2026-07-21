@@ -109,7 +109,7 @@ export function WhyChooseUs() {
               Why Choose Us
             </span>
             <h2 className="text-[clamp(2.2rem,5.5vw,4rem)] font-black leading-none tracking-tight text-foreground">
-              The Sahil Cutzz<br />
+              The Sahil Cutz<br />
               <span
                 className="bg-clip-text text-transparent"
                 style={{ backgroundImage: 'linear-gradient(100deg, var(--color-primary), var(--color-accent))' }}

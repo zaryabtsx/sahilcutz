@@ -80,3 +80,126 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = getServerClient();
+    const body = await request.json();
+    const action = typeof body?.action === 'string' ? body.action : '';
+    const appointmentId = typeof body?.appointmentId === 'string' ? body.appointmentId : body?.id;
+    const userId = typeof body?.userId === 'string' ? body.userId : undefined;
+
+    if (!appointmentId) {
+      return NextResponse.json({ error: 'Missing appointment id' }, { status: 400 });
+    }
+
+    const { data: existingAppointment, error: appointmentError } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .single();
+
+    if (appointmentError || !existingAppointment) {
+      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+    }
+
+    if (userId && existingAppointment.user_id !== userId) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    }
+
+    if (action === 'cancel') {
+      const { data, error } = await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', appointmentId)
+        .select()
+        .single();
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      await supabase.from('notifications').insert([
+        {
+          user_id: existingAppointment.user_id,
+          type: 'booking',
+          message: 'Your appointment has been cancelled.',
+          related_appointment_id: appointmentId,
+          read: false,
+        },
+      ]);
+
+      return NextResponse.json(data);
+    }
+
+    if (action === 'reschedule') {
+      const startAt = typeof body?.start_at === 'string' ? body.start_at : undefined;
+      const endAt = typeof body?.end_at === 'string' ? body.end_at : undefined;
+      const durationMinutes = body?.duration_minutes;
+
+      if (!startAt || !endAt) {
+        return NextResponse.json({ error: 'Missing new appointment time' }, { status: 400 });
+      }
+
+      const requestedStart = new Date(startAt);
+      const requestedEnd = new Date(endAt);
+
+      if (Number.isNaN(requestedStart.getTime()) || Number.isNaN(requestedEnd.getTime())) {
+        return NextResponse.json({ error: 'Invalid appointment time' }, { status: 400 });
+      }
+
+      const { data: conflictingAppointments, error: conflictError } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('barber_id', existingAppointment.barber_id)
+        .neq('id', appointmentId)
+        .neq('status', 'cancelled')
+        .neq('status', 'completed')
+        .lt('start_at', requestedEnd.toISOString())
+        .gt('end_at', requestedStart.toISOString());
+
+      if (conflictError) {
+        return NextResponse.json({ error: conflictError.message }, { status: 400 });
+      }
+
+      if ((conflictingAppointments ?? []).length > 0) {
+        return NextResponse.json({ error: 'That time is no longer available. Please choose another slot.' }, { status: 409 });
+      }
+
+      const { data, error } = await supabase
+        .from('appointments')
+        .update({
+          start_at: requestedStart.toISOString(),
+          end_at: requestedEnd.toISOString(),
+          duration_minutes: Number(durationMinutes || existingAppointment.duration_minutes || 0),
+          status: existingAppointment.status === 'cancelled' ? 'confirmed' : existingAppointment.status,
+        })
+        .eq('id', appointmentId)
+        .select()
+        .single();
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      await supabase.from('notifications').insert([
+        {
+          user_id: existingAppointment.user_id,
+          type: 'reschedule',
+          message: `Your appointment has been rescheduled to ${requestedStart.toLocaleString()}.`,
+          related_appointment_id: appointmentId,
+          read: false,
+        },
+      ]);
+
+      return NextResponse.json(data);
+    }
+
+    return NextResponse.json({ error: 'Unsupported action' }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 },
+    );
+  }
+}

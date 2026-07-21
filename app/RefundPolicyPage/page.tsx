@@ -1,7 +1,7 @@
 import { PolicyLayout, PolicySection } from '@/components/legal/Policylayout';
 
 export const metadata = {
-  title: 'Refund & Cancellation Policy | Sahil Cutzz',
+  title: 'Refund & Cancellation Policy | Sahil Cutz',
   description: 'Our policy for cancellations, rescheduling, and refunds on paid bookings.',
 };
 
@@ -38,7 +38,7 @@ export default function RefundPolicyPage() {
         <p>If you are unhappy with a service you received, please let our staff know before you leave, or contact us within 48 hours. We will offer a complimentary fix where reasonable, and may offer a partial or full refund at our discretion if the issue cannot be resolved.</p>
       </PolicySection>
 
-      <PolicySection number="07" title="Cancellations by Sahil Cutzz">
+      <PolicySection number="07" title="Cancellations by Sahil Cutz">
         <p>On rare occasions we may need to cancel or reschedule an appointment (for example, due to staff illness). In this case you will be offered a full refund or a free rebooking at your preference, no questions asked.</p>
       </PolicySection>
 

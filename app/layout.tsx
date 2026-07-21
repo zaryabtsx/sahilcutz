@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { Navbar } from "@/components/Navbar";
+import { SupabaseAuthListener } from "@/components/SupabaseAuthListener";
+// import { WelcomePopup } from "@/components/WelcomePopup";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sahil Cutzz — Premium Barber SaaS",
+  title: "Sahil Cutz — Premium Barber SaaS",
   description: "Luxury barber appointment management and booking platform built with Next.js, Supabase, and modern UI.",
   metadataBase: new URL('https://sahilcutzz.com'),
 };
@@ -33,6 +34,8 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <ThemeProvider>
+          <SupabaseAuthListener />
+          {/* <WelcomePopup /> */}
           {children}
         </ThemeProvider>
       </body>

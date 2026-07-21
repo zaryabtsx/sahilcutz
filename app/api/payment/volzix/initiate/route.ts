@@ -74,9 +74,17 @@ export async function POST(request: NextRequest) {
 
     const supabase = getServerClient();
     const orderId = isNonEmptyString(providedOrderId) ? providedOrderId : generateOrderId(userId);
+    const serviceQuery = await supabase
+      .from('services')
+      .select('price')
+      .eq('id', serviceId)
+      .single();
+
+    const servicePrice = serviceQuery.data?.price ?? 0;
+    const requiredAdvance = getAdvancePaymentAmount(servicePrice);
     const amount = Number.isFinite(Number(providedAmount)) && Number(providedAmount) > 0
-      ? Number(providedAmount)
-      : getAdvancePaymentAmount();
+      ? Math.max(Number(providedAmount), requiredAdvance)
+      : requiredAdvance;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const paymentId = crypto.randomUUID();
     const bookingReference = isNonEmptyString(bookingId) ? bookingId : orderId;

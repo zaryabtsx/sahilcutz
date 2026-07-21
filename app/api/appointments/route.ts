@@ -6,6 +6,7 @@ import {
   adminBookingNotificationHtml,
   bookingConfirmationHtml,
 } from '@/lib/emailTemplates';
+import { getAdvancePaymentAmount } from '@/lib/volzix';
 import type { AppointmentItem } from '@/lib/types';
 
 type ServerClient = ReturnType<typeof getServerClient>;
@@ -175,7 +176,7 @@ async function sendBookingEmails({
       barberName:
         emailDetails?.barberName ||
         barber?.name ||
-        'Sahil Cutzz barber',
+        'Sahil Cutz barber',
       startAt: appointment.start_at,
       amountPaid:
         typeof emailDetails?.amountPaid !== 'undefined'
@@ -186,12 +187,12 @@ async function sendBookingEmails({
     await Promise.all([
       sendMail({
         to: details.customerEmail,
-        subject: 'Your Sahil Cutzz booking is confirmed',
+        subject: 'Your Sahil Cutz booking is confirmed',
         html: bookingConfirmationHtml(details),
       }),
       sendMail({
         to: process.env.ADMIN_EMAIL || 'admin@sahilcutzz.com',
-        subject: 'New Sahil Cutzz booking received',
+        subject: 'New Sahil Cutz booking received',
         html: adminBookingNotificationHtml(details),
       }),
     ]);
@@ -297,10 +298,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Verify payment amount is correct (500 PKR)
-      if (Number(paymentData.amount) < 500) {
+      const serviceQuery = await supabase
+        .from('services')
+        .select('price')
+        .eq('id', appointmentPayload.service_id)
+        .single();
+
+      const servicePrice = serviceQuery.data?.price ?? 0;
+      const requiredAdvance = getAdvancePaymentAmount(servicePrice);
+      if (Number(paymentData.amount) < requiredAdvance) {
         return NextResponse.json(
-          { error: 'Payment amount is insufficient. Minimum advance payment is 500 PKR.' },
+          {
+            error: `Payment amount is insufficient. Minimum advance payment is Rs. ${requiredAdvance.toLocaleString()}.`,
+          },
           { status: 400 }
         );
       }

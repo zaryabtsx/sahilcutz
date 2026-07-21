@@ -20,6 +20,7 @@ import { getSession } from '@/lib/auth';
 import { useAppStore } from '@/lib/store';
 import { initialBarbers, initialServices } from '@/lib/mockData';
 import { PaymentStep } from './PaymentStep';
+import { getAdvancePaymentAmount } from '@/lib/volzix';
 import type { ServiceItem, BarberProfile } from '@/lib/types';
 
 interface BookingWizardProps {
@@ -478,27 +479,38 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
                   <Loader className="w-6 h-6 animate-spin text-primary" />
                 </div>
               ) : availableSlots.length > 0 ? (
-                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                  {availableSlots
-                    .filter((slot) => slot.available)
-                    .map((slot, idx) => (
-                      <motion.button
-                        key={idx}
-                        onClick={() => {
-                          setBookingData({ ...bookingData, time: slot.start });
-                          handleNext();
-                        }}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
-                          bookingData.time === slot.start
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border hover:border-primary'
-                        }`}
-                      >
-                        {slot.start}
-                      </motion.button>
-                    ))}
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Booked times are shown in gray and cannot be selected.
+                  </p>
+                  <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                    {availableSlots.map((slot, idx) => {
+                      const isBooked = slot.available === false;
+                      const isSelected = bookingData.time === slot.start;
+                      return (
+                        <motion.button
+                          key={idx}
+                          onClick={() => {
+                            if (isBooked) return;
+                            setBookingData({ ...bookingData, time: slot.start });
+                            handleNext();
+                          }}
+                          whileHover={!isBooked ? { scale: 1.05 } : undefined}
+                          whileTap={!isBooked ? { scale: 0.95 } : undefined}
+                          disabled={isBooked}
+                          className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
+                            isBooked
+                              ? 'border-border/60 bg-muted/40 text-muted-foreground cursor-not-allowed'
+                              : isSelected
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-border hover:border-primary'
+                          }`}
+                        >
+                          {slot.start}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -568,6 +580,9 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
               barberId={bookingData.barberId}
               bookingDate={bookingData.date}
               bookingTime={bookingData.time}
+              advanceAmount={getAdvancePaymentAmount(
+                services.find((service) => service.id === bookingData.serviceId)?.price,
+              )}
               loading={loading}
               onPaymentFailed={(error) => {
                 setError(error);

@@ -139,7 +139,7 @@ async function sendBookingEmails({
     customerName: customer?.full_name || customerEmail,
     customerEmail,
     serviceName: service?.name || 'Barber service',
-    barberName: barber?.name || 'Sahil Cutzz barber',
+    barberName: barber?.name || 'Sahil Cutz barber',
     startAt: appointment.start_at,
     amountPaid: payment.amount,
   };
@@ -147,12 +147,12 @@ async function sendBookingEmails({
   await Promise.all([
     sendMail({
       to: details.customerEmail,
-      subject: 'Your Sahil Cutzz booking is confirmed',
+      subject: 'Your Sahil Cutz booking is confirmed',
       html: bookingConfirmationHtml(details),
     }),
     sendMail({
-      to: process.env.ADMIN_EMAIL || 'admin@sahilcutzz.com',
-      subject: 'New Sahil Cutzz booking received',
+      to: process.env.ADMIN_EMAIL || 'admin@sahilcutz.com',
+      subject: 'New Sahil Cutz booking received',
       html: adminBookingNotificationHtml(details),
     }),
   ]);

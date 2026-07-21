@@ -123,10 +123,10 @@ export async function GET(request) {
 
       const result = await sendMail({
         to: customer.email,
-        subject: 'Your Sahil Cutzz appointment is tomorrow',
+        subject: 'Your Sahil Cutz appointment is tomorrow',
         html: reminderEmailHtml({
           serviceName: service?.name || 'Barber service',
-          barberName: barber?.name || 'Sahil Cutzz barber',
+          barberName: barber?.name || 'Sahil Cutz barber',
           startAt: appointment.start_at,
         }),
       });

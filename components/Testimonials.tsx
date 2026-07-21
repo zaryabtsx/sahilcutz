@@ -16,7 +16,7 @@ const testimonials = [
     name: 'James Rodriguez',
     role: 'Entrepreneur',
     rating: 5,
-    text: 'Sahil Cutzz is my go-to place for grooming. Professional service, luxury atmosphere, and always on time. Highly recommended!',
+    text: 'Sahil Cutz is my go-to place for grooming. Professional service, luxury atmosphere, and always on time. Highly recommended!',
   },
   {
     name: 'David Chen',

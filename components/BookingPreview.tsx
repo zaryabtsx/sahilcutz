@@ -139,7 +139,7 @@ export function BookingPreview() {
                     <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))' }}>
                       <Scissors className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <span className="text-sm font-black text-foreground">Sahil Cutzz</span>
+                    <span className="text-sm font-black text-foreground">Sahil Cutz</span>
                   </div>
                 </div>
 

@@ -673,7 +673,7 @@ export default function AdminDashboardPage() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-primary">Admin Console</p>
-                <h1 className="mt-4 text-4xl font-black text-foreground">Sahil Cutzz Command Center</h1>
+                <h1 className="mt-4 text-4xl font-black text-foreground">Sahil Cutz Command Center</h1>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 {fetching && (
@@ -1241,7 +1241,7 @@ export default function AdminDashboardPage() {
                     <Clock className="w-3 h-3" /> Availability
                   </span>
                   <h2 className="mt-4 text-2xl font-black text-foreground">Set working hours</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Customers book within this window based on service duration.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">By default, the system opens 09:00–18:00 for each day. The last two days of the month stay closed unless you add a custom availability window.</p>
                 </div>
                 <button onClick={() => setShowAvailabilityModal(false)} className="rounded-2xl border border-border p-2 text-muted-foreground hover:text-foreground transition-all"><X className="w-5 h-5" /></button>
               </div>

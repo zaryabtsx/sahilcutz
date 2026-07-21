@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
@@ -16,7 +17,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { getAdvancePaymentAmount } from '@/lib/volzix';
+import type { ReactNode } from 'react';
 
 interface PaymentStepProps {
   userId: string;
@@ -27,6 +28,7 @@ interface PaymentStepProps {
   barberId: string;
   bookingDate: string;
   bookingTime: string;
+  advanceAmount: number;
   onPaymentFailed?: (error: string) => void;
   loading?: boolean;
 }
@@ -40,6 +42,7 @@ export function PaymentStep({
   barberId,
   bookingDate,
   bookingTime,
+  advanceAmount,
   onPaymentFailed,
   loading = false,
 }: PaymentStepProps) {
@@ -48,8 +51,6 @@ export function PaymentStep({
   const [paymentInitiated, setPaymentInitiated] = useState(false);
   const [paymentCompleted, setPaymentCompleted] = useState(false);
   const searchParams = useSearchParams();
-
-  const advanceAmount = getAdvancePaymentAmount();
 
   // Check if returning from payment gateway
   useEffect(() => {
@@ -89,6 +90,7 @@ export function PaymentStep({
           barberId,
           bookingDate,
           bookingTime,
+          amount: advanceAmount,
         }),
       });
 
@@ -248,8 +250,8 @@ export function PaymentStep({
                 {paymentInitiated || paymentCompleted ? <CheckCircle className="w-5 h-5" /> : '1'}
               </div>
               <div className="flex-1 pt-1">
-                <p className="font-medium text-foreground">Click "Proceed to Payment"</p>
-                <p className="text-sm text-muted-foreground mt-1">You'll be redirected to our secure payment gateway</p>
+                <p className="font-medium text-foreground">Click &ldquo;Proceed to Payment&quot;</p>
+                <p className="text-sm text-muted-foreground mt-1">You&apos;ll be redirected to our secure payment gateway</p>
               </div>
             </motion.div>
 
@@ -285,7 +287,7 @@ export function PaymentStep({
               </div>
               <div className="flex-1 pt-1">
                 <p className="font-medium text-foreground">Confirm & Return</p>
-                <p className="text-sm text-muted-foreground mt-1">You'll automatically return to complete your booking</p>
+                <p className="text-sm text-muted-foreground mt-1">You&#39;ll automatically return to complete your booking</p>
               </div>
             </motion.div>
           </div>
@@ -298,7 +300,7 @@ export function PaymentStep({
             className="p-4 bg-blue-50 dark:bg-blue-950 rounded-xl border border-blue-200 dark:border-blue-800"
           >
             <div className="flex gap-3">
-              <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+              <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
               <div className="text-sm">
                 <p className="font-semibold text-blue-900 dark:text-blue-100">100% Secure</p>
                 <p className="text-blue-800 dark:text-blue-200 mt-1">

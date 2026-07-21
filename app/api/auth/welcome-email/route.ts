@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     const result = await sendMail({
       to: body.email,
-      subject: 'Welcome to Sahil Cutzz 🎉',
+      subject: 'Welcome to Sahil Cutz 🎉',
       html: welcomeEmailHtml({
         fullName: typeof body.fullName === 'string' ? body.fullName : '',
         bookingUrl: `${siteUrl}/booking`,

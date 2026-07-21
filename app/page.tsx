@@ -10,12 +10,14 @@ import { BookingPreview } from "@/components/BookingPreview";
 // import { CTABanner } from "@/components/CTABanner";
 import { CtaBanner2 } from "@/components/CtaBanner2";
 import { Testimonials } from "@/components/Testimonials";
+import { WelcomePopup } from "@/components/WelcomePopup";
 
 export default function Home() {
   return (
     <>
       {/* <Navbar /> */}
-       <Navbar></Navbar>
+      <WelcomePopup />
+      <Navbar></Navbar>
       <Hero></Hero>
       <Services></Services>
       {/* <WhyUs></WhyUs> */}

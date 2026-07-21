@@ -335,7 +335,7 @@ export default function ProfilePage() {
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#C9A84C] to-[#E5C97A] font-['Playfair_Display'] text-lg font-black text-[#0A0A08]">S</div>
             <div>
-              <p className="font-['Playfair_Display'] text-base font-bold text-[#F0EDE4]">Sahil Cutzz</p>
+              <p className="font-['Playfair_Display'] text-base font-bold text-[#F0EDE4]">Sahil Cutz</p>
               <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C9A84C]">Premium Barbershop</p>
             </div>
           </div>

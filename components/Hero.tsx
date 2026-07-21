@@ -34,8 +34,8 @@ export function Hero() {
 
   const stats = [
     { icon: Star,  value: '500+',  label: 'Happy Clients',  color: '#f59e0b' },
-    { icon: Users, value: '10+',   label: 'Expert Barbers', color: '#6366f1' },
-    { icon: Clock, value: '15min', label: 'Avg. Wait Time', color: '#10b981' },
+    { icon: Users, value: '1+',   label: 'Expert Barbers', color: '#6366f1' },
+    { icon: Clock, value: '45min', label: 'Avg. Wait Time', color: '#10b981' },
   ];
 
   const badges = ['Fade Specialists', 'Hot Towel Shave', 'Beard Design'];
@@ -144,7 +144,7 @@ export function Hero() {
               transition={{ delay: 0.48, duration: 0.6 }}
               className="text-base md:text-lg text-muted-foreground max-w-lg leading-relaxed"
             >
-              Book your haircut in seconds with <strong className="text-foreground font-semibold">Sahil Cutzz</strong>.
+              Book your haircut in seconds with <strong className="text-foreground font-semibold">Sahil Cutz</strong>.
               Luxury barber services designed for the modern gentleman — precision cuts, zero compromise.
             </motion.p>
 

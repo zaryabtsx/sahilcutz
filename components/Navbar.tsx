@@ -115,7 +115,7 @@ export function Navbar() {
                       "linear-gradient(90deg, var(--color-primary), var(--color-accent))",
                   }}
                 >
-                  Sahil Cutzz
+                  Sahil Cutz
                 </span>
               </motion.a>
 
@@ -272,7 +272,7 @@ export function Navbar() {
                   "linear-gradient(90deg, var(--color-primary), var(--color-accent))",
               }}
             >
-              Sahil Cutzz
+              Sahil Cutz
             </span>
           </a>
 
@@ -515,7 +515,7 @@ export function Navbar() {
 
               {/* Footer inside drawer */}
               <p className="text-center text-xs text-muted-foreground pb-8 opacity-50">
-                © {new Date().getFullYear()} Sahil Cutzz
+                © {new Date().getFullYear()} Sahil Cutz
               </p>
             </motion.div>
           )}

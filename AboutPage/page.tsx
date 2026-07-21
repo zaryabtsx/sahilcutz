@@ -34,7 +34,7 @@ export default function AboutPage() {
             </div>
             <span className="text-xs text-primary font-semibold uppercase tracking-widest">Our Story</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight mb-3">About Sahil Cutzz</h1>
+          <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight mb-3">About Sahil Cutz</h1>
           <p className="text-base text-muted-foreground leading-relaxed max-w-2xl">
             Premium grooming for the modern gentleman — where craft meets comfort, and every visit is a moment to reset.
           </p>
@@ -66,7 +66,7 @@ export default function AboutPage() {
           <section>
             <h2 className="text-lg font-bold text-foreground mb-2">Where We Started</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Sahil Cutzz was founded on a simple idea: a haircut should feel like an experience, not a chore. What began as a single chair has grown into a destination for clients who expect precision, consistency, and genuine care in every visit.
+              Sahil Cutz was founded on a simple idea: a haircut should feel like an experience, not a chore. What began as a single chair has grown into a destination for clients who expect precision, consistency, and genuine care in every visit.
             </p>
           </section>
           <section>

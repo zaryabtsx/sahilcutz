@@ -1,8 +1,8 @@
 import { PolicyLayout, PolicySection } from '@/components/legal/Policylayout';
 
 export const metadata = {
-  title: 'Terms & Conditions | Sahil Cutzz',
-  description: 'The terms that govern booking and paying for services at Sahil Cutzz.',
+  title: 'Terms & Conditions | Sahil Cutz',
+  description: 'The terms that govern booking and paying for services at Sahil Cutz.',
 };
 
 export default function TermsAndConditionsPage() {
@@ -11,7 +11,7 @@ export default function TermsAndConditionsPage() {
       icon="fileText"
       eyebrow="Please Read Before Booking"
       title="Terms & Conditions"
-      subtitle="These terms govern your use of the Sahil Cutzz website and booking system, and apply to every appointment made with us."
+      subtitle="These terms govern your use of the Sahil Cutz website and booking system, and apply to every appointment made with us."
       lastUpdated="June 27, 2026"
     >
       <PolicySection number="01" title="Bookings">
@@ -23,7 +23,7 @@ export default function TermsAndConditionsPage() {
       </PolicySection>
 
       <PolicySection number="03" title="Payments">
-        <p>We accept payment online through our payment gateway, as well as cash and card in person, where available. Online payments are processed securely by our payment partner; Sahil Cutzz is not responsible for delays or issues caused by your bank or card issuer.</p>
+        <p>We accept payment online through our payment gateway, as well as cash and card in person, where available. Online payments are processed securely by our payment partner; Sahil Cutz is not responsible for delays or issues caused by your bank or card issuer.</p>
       </PolicySection>
 
       <PolicySection number="04" title="Cancellations & Rescheduling">
@@ -35,7 +35,7 @@ export default function TermsAndConditionsPage() {
       </PolicySection>
 
       <PolicySection number="06" title="Liability">
-        <p>While our barbers take every care during each service, Sahil Cutzz is not liable for allergic reactions to products unless you have informed us of a known allergy in advance. Please tell us about any skin or scalp sensitivities before your service begins.</p>
+        <p>While our barbers take every care during each service, Sahil Cutz is not liable for allergic reactions to products unless you have informed us of a known allergy in advance. Please tell us about any skin or scalp sensitivities before your service begins.</p>
       </PolicySection>
 
       <PolicySection number="07" title="Website Use">

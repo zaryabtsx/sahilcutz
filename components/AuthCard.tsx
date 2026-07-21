@@ -30,7 +30,7 @@ const formConfig = {
   },
   signup: {
     title: 'Create Account',
-    subtitle: 'Join Sahil Cutzz for premium barber booking and customer perks.',
+    subtitle: 'Join Sahil Cutz for premium barber booking and customer perks.',
     button: 'Create Account',
   },
   forgot: {

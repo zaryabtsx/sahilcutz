@@ -72,7 +72,7 @@ export default function ContactPage() {
 
             <div className="pt-4 border-t border-border/60">
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Registered business name: <span className="text-foreground">Sahil Cutzz</span>. For payment or refund support, please include your booking reference.
+                Registered business name: <span className="text-foreground">Sahil Cutz</span>. For payment or refund support, please include your booking reference.
               </p>
             </div>
           </motion.div>

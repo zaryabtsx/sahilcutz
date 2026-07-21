@@ -7,6 +7,13 @@ export interface TimeSlot {
   available: boolean;
 }
 
+export function isLastTwoDaysOfMonth(dateString: string) {
+  const date = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  return date.getDate() > daysInMonth - 2;
+}
+
 function toMinutes(value: string) {
   const [time, period] = value.split(' ');
   const [hourString, minuteString] = time.split(':');
@@ -56,7 +63,7 @@ export function generateAvailabilitySlots(
   const dayName = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
   const isOffDay = barber.working_hours.off_days.includes(dayName);
 
-  if (!barber.is_available || isOffDay) {
+  if (!barber.is_available || isOffDay || isLastTwoDaysOfMonth(date)) {
     return [];
   }
 

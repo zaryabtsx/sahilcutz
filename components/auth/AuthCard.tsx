@@ -78,7 +78,7 @@ export function AuthCard(props: AuthCardProps) {
       <div className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
         <div className="text-center mb-8">
           <p className="text-xs uppercase tracking-[0.35em] text-primary font-semibold">
-            Sahil Cutzz
+            Sahil Cutz
           </p>
           <h1 className="mt-2 text-3xl font-black text-foreground">{title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{description}</p>
@@ -203,7 +203,7 @@ function ModeAuthCard({ mode, onSuccess }: ModeAuthCardProps) {
   // ── Titles per mode ──────────────────────────────────────
   const titles: Record<Mode, { heading: string; sub: string }> = {
     login:  { heading: 'Welcome back',      sub: 'Sign in to your account'                     },
-    signup: { heading: 'Create an account', sub: 'Join Sahil Cutzz and book appointments'       },
+    signup: { heading: 'Create an account', sub: 'Join Sahil Cutz and book appointments'       },
     forgot: { heading: 'Forgot password?',  sub: "We'll send you a reset link right away"       },
   };
 

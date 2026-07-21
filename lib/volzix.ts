@@ -115,8 +115,19 @@ export function generateWebId(reference: string, timestamp: number = Date.now())
   return `SC-${normalized}-${timestamp}`.slice(0, 100);
 }
 
-export function getAdvancePaymentAmount(): number {
-  return parseInt(process.env.NEXT_PUBLIC_VOLZIX_ADVANCE_AMOUNT || process.env.NEXT_PUBLIC_VOLZEX_ADVANCE_AMOUNT || '500', 10);
+export function getAdvancePaymentAmount(servicePrice?: number): number {
+  const defaultAdvance = parseInt(
+    process.env.NEXT_PUBLIC_VOLZIX_ADVANCE_AMOUNT ||
+    process.env.NEXT_PUBLIC_VOLZEX_ADVANCE_AMOUNT ||
+    '500',
+    10,
+  );
+
+  if (servicePrice !== undefined && Number.isFinite(servicePrice) && servicePrice > 12000) {
+    return Math.ceil(servicePrice * 0.3);
+  }
+
+  return defaultAdvance;
 }
 
 export function formatAmountForSignature(amount: number | string) {

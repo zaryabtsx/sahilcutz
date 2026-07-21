@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { isAuthenticated, getSession } from '@/lib/auth';
 import { initialServices } from '@/lib/mockData';
+import { isLastTwoDaysOfMonth } from '@/lib/scheduling';
 import { getServiceCategoryName, sortCategoryEntries } from '@/lib/serviceCategories';
 import { getAdvancePaymentAmount } from '@/lib/volzix';
 import type { UserProfile } from '@/lib/types';
@@ -44,6 +45,7 @@ interface ComputedSlot {
   barber_id: string;
   start_time: string;
   end_time: string;
+  status: 'available' | 'booked' | 'past';
 }
 
 interface Barber {
@@ -160,8 +162,19 @@ function computeAvailableSlots(
   barberId: string,
   selectedDate: string,
 ): ComputedSlot[] {
+  if (isLastTwoDaysOfMonth(selectedDate)) return [];
+
   const barberWindows = windows.filter(w => w.barber_id === barberId && w.is_available);
-  if (!barberWindows.length) return [];
+  const effectiveWindows = barberWindows.length
+    ? barberWindows
+    : [{
+        id: `default-${barberId}-${selectedDate}`,
+        barber_id: barberId,
+        slot_date: selectedDate,
+        start_time: '09:00',
+        end_time: '18:00',
+        is_available: true,
+      } as AvailWindow];
 
   const blockedRanges = booked
     .filter(b => b.barber_id === barberId && !['Cancelled', 'cancelled'].includes(b.status))
@@ -177,7 +190,7 @@ function computeAvailableSlots(
 
   const slots: ComputedSlot[] = [];
 
-  barberWindows.forEach(win => {
+  effectiveWindows.forEach(win => {
     const winStart = timeToMins(win.start_time);
     const winEnd   = timeToMins(win.end_time);
     let cursor = winStart;
@@ -185,12 +198,14 @@ function computeAvailableSlots(
     while (cursor + durationMins <= winEnd) {
       const slotEnd = cursor + durationMins;
 
-      if (cursor < nowMins) { cursor += durationMins; continue; }
-
+      const isPast = cursor < nowMins;
       const overlaps = blockedRanges.some(r => cursor < r.to && slotEnd > r.from);
-      if (!overlaps) {
-        slots.push({ barber_id: barberId, start_time: minsToTime(cursor), end_time: minsToTime(slotEnd) });
-      }
+      slots.push({
+        barber_id: barberId,
+        start_time: minsToTime(cursor),
+        end_time: minsToTime(slotEnd),
+        status: isPast ? 'past' : (overlaps ? 'booked' : 'available'),
+      });
       cursor += durationMins;
     }
   });
@@ -260,7 +275,6 @@ function BookingPageContent() {
   const [bookingDone, setBookingDone] = useState(false);
   const [error, setError]             = useState('');
   const handledPaymentRef = useRef<string | null>(null);
-  const advanceAmount = getAdvancePaymentAmount();
 
   const servicesParamKey = searchParams.getAll('services').join(',');
   const requestedServiceTokens = useMemo(
@@ -275,6 +289,11 @@ function BookingPageContent() {
   const selectedPrice = useMemo(
     () => selectedServices.reduce((total, service) => total + Number(service.price || 0), 0),
     [selectedServices],
+  );
+
+  const advanceAmount = useMemo(
+    () => getAdvancePaymentAmount(selectedPrice),
+    [selectedPrice],
   );
   const selectedServiceNames = useMemo(
     () => selectedServices.map((service) => service.name).join(', '),
@@ -348,6 +367,7 @@ function BookingPageContent() {
         .lt('start_at', `${date}T23:59:59`)
         .not('status', 'in', '("Cancelled","cancelled")'),
     ]);
+
     setWindows((winRes.data ?? []) as AvailWindow[]);
     setBooked((apptRes.data ?? []) as BookedAppt[]);
     setLoadingSlots(false);
@@ -392,10 +412,10 @@ function BookingPageContent() {
   };
 
   const pickDate = (day: number) => {
-    const d = new Date(calYear, calMonth, day);
-    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (d < todayMidnight) return;
-    setSelectedDate(isoDate(d));
+    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const todayStr = isoDate(today);
+    if (dateStr < todayStr) return;
+    setSelectedDate(dateStr);
     setSelectedSlot(null);
   };
 
@@ -531,6 +551,7 @@ function BookingPageContent() {
           barberId: snapshot.selectedSlot.barber_id,
           bookingDate: snapshot.selectedDate,
           bookingTime: snapshot.selectedSlot.start_time,
+          amount: getAdvancePaymentAmount(snapshot.selectedPrice),
           returnPath: '/booking/payment-status',
         }),
       });
@@ -718,7 +739,7 @@ function BookingPageContent() {
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-primary">Book appointment</p>
-                <h1 className="mt-3 text-3xl font-black text-foreground">Sahil Cutzz</h1>
+                <h1 className="mt-3 text-3xl font-black text-foreground">Sahil Cutz</h1>
               </div>
               <Steps current={step} />
             </div>
@@ -882,19 +903,24 @@ function BookingPageContent() {
                       <div className="grid grid-cols-7 gap-1">
                         {calDays.map((day, i) => {
                           if (day === null) return <div key={`empty-${i}`} />;
-                          const dateStr = isoDate(new Date(calYear, calMonth, day));
-                          const isPast  = new Date(calYear, calMonth, day) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                          const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                          const todayStr = isoDate(today);
+                          const isPast  = dateStr < todayStr;
+                          const isLastTwo = isLastTwoDaysOfMonth(dateStr);
                           const isSelected = dateStr === selectedDate;
-                          const isToday    = dateStr === isoDate(today);
+                          const isToday    = dateStr === todayStr;
                           return (
                             <button
                               key={day}
-                              onClick={() => pickDate(day)}
-                              disabled={isPast}
+                              onClick={() => !isPast && !isLastTwo && pickDate(day)}
+                              disabled={isPast || isLastTwo}
                               className={`rounded-xl aspect-square flex items-center justify-center text-sm font-semibold transition-all ${
-                                isSelected  ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' :
+                                isLastTwo
+                                  ? 'text-muted-foreground/30 cursor-not-allowed bg-muted/40'
+                                  : isPast
+                                  ? 'text-muted-foreground/30 cursor-not-allowed'
+                                  : isSelected  ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' :
                                 isToday     ? 'border border-primary/40 text-primary' :
-                                isPast      ? 'text-muted-foreground/30 cursor-not-allowed' :
                                               'text-foreground hover:bg-background/80'
                               }`}
                             >
@@ -941,6 +967,9 @@ function BookingPageContent() {
                     )}
 
                     <div className="mt-6 space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      <p className="text-xs text-muted-foreground">
+                        Booked times are shown in gray and cannot be selected.
+                      </p>
                       {loadingSlots ? (
                         <div className="flex items-center justify-center py-10">
                           <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -957,28 +986,45 @@ function BookingPageContent() {
                           const isSelected =
                             selectedSlot?.start_time === slot.start_time &&
                             selectedSlot?.barber_id  === slot.barber_id;
+                          const isBooked = slot.status === 'booked';
+                          const isPast = slot.status === 'past';
                           return (
                             <button
                               key={`${slot.barber_id}-${slot.start_time}`}
-                              onClick={() => setSelectedSlot(isSelected ? null : slot)}
-                              className={`w-full rounded-3xl border p-4 text-left transition-all hover:border-primary/40 ${
-                                isSelected
-                                  ? 'border-primary bg-primary/10 shadow-md shadow-primary/10'
-                                  : 'border-border bg-background/90'
+                              onClick={() => !isBooked && !isPast && setSelectedSlot(isSelected ? null : slot)}
+                              disabled={isBooked || isPast}
+                              className={`w-full rounded-3xl border p-4 text-left transition-all ${
+                                isBooked || isPast
+                                  ? 'border-border/60 bg-muted/40 text-muted-foreground cursor-not-allowed'
+                                  : isSelected
+                                    ? 'border-primary bg-primary/10 shadow-md shadow-primary/10 text-foreground hover:border-primary/40'
+                                    : 'border-border bg-background/90 text-foreground hover:border-primary/40'
                               }`}
                             >
-                              <div className="flex items-center justify-between">
+                              <div className="flex items-center justify-between gap-3">
                                 <div>
-                                  <p className="font-bold text-foreground">
-                                    {fmtTime12(slot.start_time)}
-                                    <span className="mx-1.5 text-muted-foreground font-normal">→</span>
-                                    {fmtTime12(slot.end_time)}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-bold">
+                                      {fmtTime12(slot.start_time)}
+                                      <span className="mx-1.5 font-normal">→</span>
+                                      {fmtTime12(slot.end_time)}
+                                    </p>
+                                    {isBooked && (
+                                      <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                        Booked
+                                      </span>
+                                    )}
+                                    {isPast && (
+                                      <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                        Past
+                                      </span>
+                                    )}
+                                  </div>
                                   {barberName && (
-                                    <p className="text-xs text-muted-foreground mt-0.5">with {barberName}</p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">with {barberName}</p>
                                   )}
                                 </div>
-                                {isSelected && <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />}
+                                {isSelected && !isBooked && <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />}
                               </div>
                             </button>
                           );
@@ -1100,7 +1146,7 @@ function BookingPageContent() {
 
                     <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-500">
                       <ShieldCheck className="h-4 w-4 shrink-0" />
-                      <span>Payment is processed by Volzix. Sahil Cutzz does not store card or banking details.</span>
+                      <span>Payment is processed by Volzix. Sahil Cutz does not store card or banking details.</span>
                     </div>
                   </div>
 
