@@ -11,7 +11,6 @@ export const signupSchema = z.object({
   email: z.string().email('Enter a valid email'),
   phone: z.string().min(10, 'Enter a valid phone number'),
   password: z.string().min(6, 'At least 6 characters'),
-  role: z.enum(['customer', 'barber']),
 });
 
 export const forgotPasswordSchema = z.object({

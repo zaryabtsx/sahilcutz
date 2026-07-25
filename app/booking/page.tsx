@@ -13,7 +13,7 @@ import { initialServices } from '@/lib/mockData';
 import { isLastTwoDaysOfMonth } from '@/lib/scheduling';
 import { getServiceCategoryName, sortCategoryEntries } from '@/lib/serviceCategories';
 import { getAdvancePaymentAmount } from '@/lib/volzix';
-import { getPaymentMethodOptions, isBankTransferPaymentMethod } from '@/lib/paymentMethodConfig';
+import { getPaymentMethodOptions } from '@/lib/paymentMethodConfig';
 import type { UserProfile } from '@/lib/types';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Loader2,
@@ -72,6 +72,7 @@ interface PendingBookingSnapshot {
   selectedDuration: number;
   selectedServiceNames: string;
   barberName: string;
+  paymentMethod: 'volzix' | 'bank_transfer';
 }
 
 const PENDING_BOOKING_PAYMENT_KEY = 'sahilcutz:pending-booking-payment';
@@ -450,6 +451,7 @@ function BookingPageContent() {
       selectedDuration,
       selectedServiceNames,
       barberName: barbers.find(b => b.id === selectedSlot.barber_id)?.name ?? '—',
+      paymentMethod,
     };
   };
 
@@ -499,8 +501,6 @@ function BookingPageContent() {
         },
       } as const;
 
-      // Debug log to inspect payload when API returns 400
-      // eslint-disable-next-line no-console
       console.log('Creating appointment with payload:', appointmentBody);
 
       const apptRes = await fetch('/api/appointments', {
@@ -548,12 +548,6 @@ function BookingPageContent() {
     try {
       sessionStorage.setItem(PENDING_BOOKING_PAYMENT_KEY, JSON.stringify(snapshot));
 
-      if (isBankTransferPaymentMethod(paymentMethod)) {
-        const paymentId = `bank-transfer-${Date.now()}`;
-        await completePaidBooking(paymentId, snapshot, paymentMethod);
-        return;
-      }
-
       const paymentRes = await fetch('/api/payment/volzix/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -567,6 +561,7 @@ function BookingPageContent() {
           bookingDate: snapshot.selectedDate,
           bookingTime: snapshot.selectedSlot.start_time,
           amount: getAdvancePaymentAmount(snapshot.selectedPrice),
+          paymentMethod,
           returnPath: '/booking/payment-status',
         }),
       });
@@ -583,7 +578,7 @@ function BookingPageContent() {
 
       window.location.href = paymentPayload.paymentUrl;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unable to start payment. Please try again.');
+      setError(err instanceof Error ? err.message : 'Unable to submit booking. Please try again.');
       setSubmitting(false);
     }
   };
@@ -596,26 +591,27 @@ function BookingPageContent() {
     const orderId = searchParams.get('orderId');
     const paymentKey = paymentId || orderId;
 
-    if (paymentStatus === 'success' && paymentId && handledPaymentRef.current !== paymentKey) {
+    if ((paymentStatus === 'success' || paymentStatus === 'completed') && paymentId && handledPaymentRef.current !== paymentKey) {
       handledPaymentRef.current = paymentKey;
       queueMicrotask(() => {
         const savedSnapshot = sessionStorage.getItem(PENDING_BOOKING_PAYMENT_KEY);
 
         if (!savedSnapshot) {
           setStep(2);
-          setError('Payment was completed, but the booking details were not found. Please contact support with your payment reference.');
+          setError('Payment was completed, but the booking details were not be found. Please contact support with your payment reference.');
           return;
         }
 
         try {
-          const snapshot = JSON.parse(savedSnapshot) as PendingBookingSnapshot;
+              const snapshot = JSON.parse(savedSnapshot) as PendingBookingSnapshot;
           setSelectedServices(snapshot.selectedServices);
           setSelectedSlot(snapshot.selectedSlot);
           setSelectedDate(snapshot.selectedDate);
           setSelectedBarber(snapshot.selectedBarber);
           setCustomerPhone(snapshot.customerPhone);
+          setPaymentMethod(snapshot.paymentMethod);
           setStep(2);
-          void completePaidBooking(paymentId, snapshot, 'volzix');
+          void completePaidBooking(paymentId, snapshot, snapshot.paymentMethod);
         } catch {
           setStep(2);
           setError('Payment was completed, but the saved booking details could not be restored. Please contact support with your payment reference.');
@@ -670,14 +666,16 @@ function BookingPageContent() {
           <CheckCircle className="w-10 h-10 text-primary" />
         </div>
 
-        <h1 className="text-3xl font-black text-foreground">Booking confirmed!</h1>
+        <h1 className="text-3xl font-black text-foreground">
+          Booking confirmed!
+        </h1>
 
         <p className="mt-3 text-muted-foreground">
           Your booking for{' '}
           <span className="font-semibold text-foreground">
             {confirmedServices.map(service => service.name).join(', ')}
           </span>{' '}
-          appointment is booked for{' '}
+          appointment is scheduled for{' '}
           <span className="font-semibold text-foreground">
             {fmtTime12(confirmedSlot?.start_time ?? '')}
           </span>{' '}
@@ -688,6 +686,7 @@ function BookingPageContent() {
               : ''}
           </span>.
         </p>
+
 
         <p className="mt-2 text-sm text-muted-foreground">
           With <span className="font-semibold text-foreground">{confirmedBarberName}</span>
@@ -1136,7 +1135,7 @@ function BookingPageContent() {
                       <div className="shrink-0 rounded-3xl border border-primary/25 bg-background/80 px-5 py-4 text-left lg:text-right">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Amount due now</p>
                         <p className="mt-1 text-3xl font-black text-primary">Rs. {advanceAmount.toLocaleString()}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{paymentMethod === 'bank_transfer' ? 'via bank transfer' : 'via Volzix'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{paymentMethod === 'bank_transfer' ? 'via bank account' : 'via Volzix'}</p>
                       </div>
                     </div>
 
@@ -1168,7 +1167,7 @@ function BookingPageContent() {
                     <div className="mt-5 grid gap-3 md:grid-cols-3">
                       {[
                         { title: 'Secure online payment', body: 'Pay the advance through Volzix using JazzCash or card-based options.', icon: CreditCard },
-                        { title: 'Bank transfer', body: 'Transfer the advance to the provided bank account and we will confirm your booking manually.', icon: Lock },
+                        { title: 'Bank transfer', body: 'Redirect to Volzix for an advance payment with bank transfer-compatible options.', icon: Lock },
                         { title: 'Confirm booking', body: 'Your appointment is created automatically once the booking is confirmed.', icon: ShieldCheck },
                       ].map(({ title, body, icon: Icon }, index) => (
                         <div key={title} className="rounded-2xl border border-border bg-background/80 p-4">
@@ -1186,7 +1185,7 @@ function BookingPageContent() {
 
                     <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-500">
                       <ShieldCheck className="h-4 w-4 shrink-0" />
-                      <span>{paymentMethod === 'bank_transfer' ? 'Bank transfer is available for appointments booked directly with us.' : 'Payment is processed by Volzix. Sahil Cutz does not store card or banking details.'}</span>
+                      <span>{paymentMethod === 'bank_transfer' ? 'Bank transfer payments are processed through Volzix.' : 'Payment is processed by Volzix. Sahil Cutz does not store card or banking details.'}</span>
                     </div>
                   </div>
 
@@ -1205,8 +1204,12 @@ function BookingPageContent() {
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all"
                     >
                       {submitting
-                        ? <><Loader2 className="w-4 h-4 animate-spin" /> {paymentMethod === 'bank_transfer' ? 'Confirming booking…' : 'Starting secure payment…'}</>
-                        : <><CreditCard className="w-4 h-4" /> {paymentMethod === 'bank_transfer' ? 'Confirm Booking' : 'Proceed to Volzix Payment'} <ArrowRight className="w-4 h-4" /></>}
+                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting secure payment…</>
+                          : (
+                            paymentMethod === 'bank_transfer'
+                              ? <><Lock className="w-4 h-4" /> Proceed to Volzix (Bank account) <ArrowRight className="w-4 h-4" /></>
+                              : <><CreditCard className="w-4 h-4" /> Proceed to Volzix payment <ArrowRight className="w-4 h-4" /></>
+                          )}
                     </button>
                   </div>
                 </div>

@@ -57,7 +57,7 @@ export function PaymentStep({
     const paymentStatus = searchParams.get('paymentStatus');
     const orderId = searchParams.get('orderId');
 
-    if (paymentStatus === 'success' && orderId) {
+    if ((paymentStatus === 'success' || paymentStatus === 'completed') && orderId) {
       setPaymentCompleted(true);
       setPaymentInitiated(false);
     } else if (paymentStatus === 'failed' && orderId) {

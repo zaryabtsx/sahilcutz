@@ -72,7 +72,9 @@ export async function GET(request: NextRequest) {
     const flowId = request.nextUrl.searchParams.get('flowId');
     const bookingId = request.nextUrl.searchParams.get('bookingId');
 
-    if (!paymentId && !orderId && !webId && !flowId && !bookingId) {
+    const lookupOrderId = orderId || bookingId;
+
+    if (!paymentId && !lookupOrderId && !webId && !flowId) {
       return NextResponse.json(
         { error: 'Missing payment reference' },
         { status: 400 },
@@ -82,7 +84,7 @@ export async function GET(request: NextRequest) {
     const supabase = getServerClient();
     const payment = await loadPayment(supabase, {
       paymentId,
-      orderId,
+      orderId: lookupOrderId,
       webId,
       flowId,
     });

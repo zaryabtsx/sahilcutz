@@ -5,8 +5,9 @@ import { motion } from 'motion/react';
 import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff, ShieldCheck, Mail, User, Lock } from 'lucide-react';
+import Link from 'next/link';
 import { loginSchema, signupSchema, forgotPasswordSchema } from '@/lib/validators';
-import { supabase } from '@/lib/supabase';
+import { signIn, signUp, sendPasswordReset } from '@/lib/auth';
 import type { z } from 'zod';
 
 type AuthFormValues = {
@@ -14,7 +15,6 @@ type AuthFormValues = {
   password?: string;
   full_name?: string;
   phone?: string;
-  role?: 'customer' | 'barber';
 };
 
 interface AuthCardProps {
@@ -62,53 +62,41 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
     try {
       if (mode === 'login') {
         const loginValues = values as z.infer<typeof loginSchema>;
-        const { error } = await supabase.auth.signInWithPassword({
-          email: loginValues.email,
-          password: loginValues.password,
-        });
+        const result = await signIn(loginValues.email, loginValues.password ?? '');
 
-        if (error) throw error;
+        if (!result.success) {
+          throw new Error(result.message);
+        }
+
         setSuccessMessage('Welcome back! Redirecting…');
         onSuccess?.();
       }
 
       if (mode === 'signup') {
         const signupValues = values as z.infer<typeof signupSchema>;
-        const { error } = await supabase.auth.signUp({
+        const result = await signUp({
+          fullName: signupValues.full_name,
           email: signupValues.email,
+          phone: signupValues.phone,
           password: signupValues.password,
-          options: {
-            data: {
-              full_name: signupValues.full_name,
-              phone: signupValues.phone,
-              role: signupValues.role,
-            },
-          },
+          role: 'customer',
         });
 
-        if (error) throw error;
-        try {
-          await fetch('/api/auth/welcome-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: signupValues.email,
-              fullName: signupValues.full_name,
-            }),
-          });
-        } catch (mailError) {
-          console.warn('Welcome email request failed:', mailError);
+        if (!result.success) {
+          throw new Error(result.message);
         }
-        setSuccessMessage('Account created successfully. Check your email to verify.');
+
+        setSuccessMessage('Account created successfully. Please check your email to verify your account.');
+        onSuccess?.();
+        return;
       }
 
       if (mode === 'forgot') {
-        const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-          redirectTo: `${window.location.origin}/auth/login`,
-        });
-
-        if (error) throw error;
-        setSuccessMessage('Password recovery link sent. Check your inbox.');
+        const result = await sendPasswordReset(values.email);
+        if (!result.success) {
+          throw new Error(result.message);
+        }
+        setSuccessMessage('Password recovery link sent. Please check your email for instructions.');
       }
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'Unable to complete request');
@@ -200,20 +188,6 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
             </div>
           )}
 
-          {mode === 'signup' && (
-            <div>
-              <label htmlFor="role" className="text-sm font-medium text-foreground block mb-2">Account Type</label>
-              <select
-                id="role"
-                {...register('role')}
-                className="w-full rounded-2xl border border-border bg-background/90 px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-              >
-                <option value="customer">Customer</option>
-                <option value="barber">Barber</option>
-              </select>
-            </div>
-          )}
-
           {successMessage && <div className="rounded-2xl bg-success/10 border border-success/20 p-4 text-sm text-success">{successMessage}</div>}
           {errorMessage && <div className="rounded-2xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">{errorMessage}</div>}
 
@@ -222,10 +196,19 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
             whileTap={{ scale: 0.98 }}
             type="submit"
             disabled={loading}
-            className="w-full rounded-2xl px-5 py-3.5 bg-gradient-to-r from-primary to-accent text-primary-foreground font-semibold shadow-xl shadow-primary/20"
+            className="w-full rounded-2xl px-5 py-3.5 bg-linear-to-r from-primary to-accent text-primary-foreground font-semibold shadow-xl shadow-primary/20"
           >
             {loading ? 'Working…' : formConfig[mode].button}
           </motion.button>
+
+          {mode === 'signup' && (
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              Already have an account?{' '}
+              <Link href="/auth/login" className="font-semibold text-primary hover:underline underline-offset-4">
+                Sign in
+              </Link>
+            </div>
+          )}
         </form>
       </div>
     </motion.div>

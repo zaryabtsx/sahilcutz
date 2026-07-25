@@ -300,9 +300,10 @@ export function verifyIpnSignature(payload: VolzixIpnPayload) {
 }
 
 export function isVolzixCompleted(status?: string) {
-  return String(status || '').toLowerCase() === 'completed';
+  const normalized = String(status || '').toLowerCase();
+  return ['completed', 'success', 'paid', 'settled'].includes(normalized);
 }
 
 export function isVolzixTerminalFailure(status?: string) {
-  return ['expired', 'failed', 'cancelled', 'canceled', 'dropped', 'refunded'].includes(String(status || '').toLowerCase());
+  return ['expired', 'failed', 'cancelled', 'canceled', 'dropped', 'refunded', 'declined'].includes(String(status || '').toLowerCase());
 }

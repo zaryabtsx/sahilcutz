@@ -10,17 +10,28 @@ export async function GET(request: NextRequest) {
   const returnPath = safePath(params.get('returnPath'));
   const redirectUrl = new URL(returnPath, appUrl);
 
-  const orderId = params.get('orderId') || params.get('order_id') || params.get('merchant_reference');
-  const paymentId = params.get('paymentId') || params.get('payment_id');
-  const bookingId = params.get('bookingId') || params.get('booking_id');
-  const webId = params.get('webId') || params.get('web_id');
-  const flowId = params.get('flowId') || params.get('flow_id');
+  const forwardingMap: Record<string, string> = {
+    orderId: 'orderId',
+    order_id: 'orderId',
+    merchant_reference: 'orderId',
+    paymentId: 'paymentId',
+    payment_id: 'paymentId',
+    bookingId: 'bookingId',
+    booking_id: 'bookingId',
+    webId: 'webId',
+    web_id: 'webId',
+    flowId: 'flowId',
+    flow_id: 'flowId',
+    status: 'paymentStatus',
+    paymentStatus: 'paymentStatus',
+    payment_status: 'paymentStatus',
+  };
 
-  if (orderId) redirectUrl.searchParams.set('orderId', orderId);
-  if (paymentId) redirectUrl.searchParams.set('paymentId', paymentId);
-  if (bookingId) redirectUrl.searchParams.set('bookingId', bookingId);
-  if (webId) redirectUrl.searchParams.set('webId', webId);
-  if (flowId) redirectUrl.searchParams.set('flowId', flowId);
+  for (const [key, value] of params.entries()) {
+    if (key === 'returnPath') continue;
+    const forwardedKey = forwardingMap[key] || key;
+    redirectUrl.searchParams.set(forwardedKey, value);
+  }
 
   return NextResponse.redirect(redirectUrl);
 }

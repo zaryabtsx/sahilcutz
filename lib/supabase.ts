@@ -1,8 +1,14 @@
 // lib/supabase.ts
 import { createBrowserClient } from '@supabase/ssr';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://diiyjpyrswxsnjutpcqq.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'sb_publishable_SbU9tAMMQedGGXxG4SSQsA_Q4k0Pmw7';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  if (typeof window !== 'undefined') {
+    console.warn('[Supabase] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. The app may not connect to the correct Supabase project.');
+  }
+}
 
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
   auth: {

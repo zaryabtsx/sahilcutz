@@ -8,7 +8,7 @@ import {
   adminBookingNotificationHtml,
   bookingConfirmationHtml,
 } from '@/lib/emailTemplates';
-import { getAdvancePaymentAmount } from '@/lib/volzix';
+import { getAdvancePaymentAmount, isVolzixCompleted } from '@/lib/volzix';
 import type { AppointmentItem } from '@/lib/types';
 
 type ServerClient = ReturnType<typeof getServerClient>;
@@ -281,123 +281,58 @@ export async function POST(request: NextRequest) {
 
     // Check if payment is required (non-emergency bookings)
     if (!isEmergency) {
-      const paymentMethod = typeof body.payment_method === 'string' ? body.payment_method : undefined;
+      const paymentId = appointmentPayload.payment_id;
 
-      if (paymentMethod === 'bank_transfer') {
-        const paymentId = appointmentPayload.payment_id;
-        if (!paymentId) {
-          appointmentPayload.payment_id = `bank-transfer-${Date.now()}`;
-        }
-      } else {
-        const paymentId = appointmentPayload.payment_id;
-
-        // Verify payment exists and is completed
-        if (!paymentId) {
-          return NextResponse.json(
-            { error: 'Payment required: Please complete the advance payment of 500 PKR to confirm your booking.' },
-            { status: 400 }
-          );
-        }
-
-        // Check if payment is completed
-        const { data: paymentData, error: paymentError } = await supabase
-          .from('payments')
-          .select('id, status, user_id, amount')
-          .eq('id', paymentId)
-          .single();
-
-        if (paymentError || !paymentData) {
-          return NextResponse.json(
-            { error: 'Payment not found. Please try booking again.' },
-            { status: 400 }
-          );
-        }
-
-        // Verify payment belongs to the user
-        if (paymentData.user_id !== appointmentPayload.user_id) {
-          return NextResponse.json(
-            { error: 'Payment verification failed. This payment does not belong to your account.' },
-            { status: 403 }
-          );
-        }
-
-        // Verify payment is completed
-        if (paymentData.status !== 'completed') {
-          return NextResponse.json(
-            { error: `Payment not completed. Current status: ${paymentData.status}. Please complete the payment first.` },
-            { status: 400 }
-          );
-        }
-
-        const serviceQuery = await supabase
-          .from('services')
-          .select('price')
-          .eq('id', appointmentPayload.service_id)
-          .single();
-
-        const servicePrice = serviceQuery.data?.price ?? 0;
-        const requiredAdvance = getAdvancePaymentAmount(servicePrice);
-        if (Number(paymentData.amount) < requiredAdvance) {
-          return NextResponse.json(
-            {
-              error: `Payment amount is insufficient. Minimum advance payment is Rs. ${requiredAdvance.toLocaleString()}.`,
-            },
-            { status: 400 }
-          );
-        }
+      if (!paymentId) {
+        return NextResponse.json(
+          { error: 'Payment required: Please complete the advance payment to confirm your booking.' },
+          { status: 400 }
+        );
       }
 
-        // If client chose bank transfer, ensure we have a payments row so DB foreign keys pass
-        if (!isEmergency && typeof body.payment_method === 'string' && body.payment_method === 'bank_transfer') {
-          const paymentId = appointmentPayload.payment_id;
-          // create a payments record if it doesn't already exist
-          try {
-            // look up by order_id instead of id because `paymentId` may be a non-UUID reference
-            const existing = await supabase.from('payments').select('id').eq('order_id', paymentId).maybeSingle();
-            if (existing && existing.data && existing.data.id) {
-              // If a payments row already exists for this bank-transfer reference,
-              // set the appointment's payment_id to the real UUID so the foreign key matches.
-              (appointmentPayload as any).payment_id = existing.data.id;
-            } else {
-              // determine amount from service
-              const serviceQuery = await supabase
-                .from('services')
-                .select('price')
-                .eq('id', appointmentPayload.service_id)
-                .single();
-              const servicePrice = serviceQuery.data?.price ?? 0;
-              const requiredAdvance = getAdvancePaymentAmount(servicePrice);
+      const { data: paymentData, error: paymentError } = await supabase
+        .from('payments')
+        .select('id, status, user_id, amount')
+        .eq('id', paymentId)
+        .single();
 
-              const dbId = crypto.randomUUID();
-              const { error: insertErr } = await supabase.from('payments').insert({
-                id: dbId,
-                provider: 'bank_transfer',
-                user_id: appointmentPayload.user_id,
-                // store the bank-transfer reference in order_id so it can be searched later
-                order_id: paymentId,
-                web_id: null,
-                amount: requiredAdvance,
-                currency: 'PKR',
-                status: 'pending',
-                payment_type: 'advance',
-                service_id: appointmentPayload.service_id,
-                barber_id: appointmentPayload.barber_id,
-                booking_date: appointmentPayload.start_at?.slice(0,10) || null,
-                booking_time: appointmentPayload.start_at ? new Date(appointmentPayload.start_at).toISOString().slice(11,19) : null,
-                created_at: new Date().toISOString(),
-              });
+      if (paymentError || !paymentData) {
+        return NextResponse.json(
+          { error: 'Payment not found. Please try booking again.' },
+          { status: 400 }
+        );
+      }
 
-              if (insertErr) {
-                console.error('Failed to create bank_transfer payment record', { insertErr, paymentId, appointmentPayload });
-              }
+      if (paymentData.user_id !== appointmentPayload.user_id) {
+        return NextResponse.json(
+          { error: 'Payment verification failed. This payment does not belong to your account.' },
+          { status: 403 }
+        );
+      }
 
-              // Ensure appointment references the UUID id we created
-              (appointmentPayload as any).payment_id = dbId;
-            }
-          } catch (err) {
-            console.error('Error ensuring bank transfer payment record', err);
-          }
-        }
+      if (!isVolzixCompleted(paymentData.status)) {
+        return NextResponse.json(
+          { error: `Payment not completed. Current status: ${paymentData.status}. Please complete the payment first.` },
+          { status: 400 }
+        );
+      }
+
+      const serviceQuery = await supabase
+        .from('services')
+        .select('price')
+        .eq('id', appointmentPayload.service_id)
+        .single();
+
+      const servicePrice = serviceQuery.data?.price ?? 0;
+      const requiredAdvance = getAdvancePaymentAmount(servicePrice);
+      if (Number(paymentData.amount) < requiredAdvance) {
+        return NextResponse.json(
+          {
+            error: `Payment amount is insufficient. Minimum advance payment is Rs. ${requiredAdvance.toLocaleString()}.`,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     if (isEmergency) {
@@ -439,11 +374,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    const bankPayment = typeof body.payment_method === 'string' && body.payment_method === 'bank_transfer' && data?.payment_id
+      ? await supabase
+          .from('payments')
+          .select('id, order_id, amount, currency, status, provider, payment_type')
+          .eq('id', data.payment_id)
+          .maybeSingle()
+          .then((result) => (result.error ? null : result.data))
+      : null;
+
     await supabase.from('notifications').insert([
       {
         user_id: appointmentPayload.user_id,
         type: 'booking',
-        message: `Your appointment has been confirmed for ${new Date(appointmentPayload.start_at).toLocaleString()}`,
+        message: appointmentPayload.status === 'pending'
+          ? `Your appointment is pending confirmation. We will update you once the advance payment is received.`
+          : `Your appointment has been confirmed for ${new Date(appointmentPayload.start_at).toLocaleString()}`,
         related_appointment_id: data.id,
         read: false,
       },
@@ -453,7 +399,7 @@ export async function POST(request: NextRequest) {
       await sendBookingEmails({ supabase, appointment: data as AppointmentRow, emailDetails });
     }
 
-    return NextResponse.json(data, { status: 201 });
+    return NextResponse.json({ appointment: data, bankPayment }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

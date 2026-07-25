@@ -144,18 +144,28 @@ export function adminLogout(): void {
   supabase.auth.signOut();
 }
 
-async function syncProfileFromAuth(profile: UserProfile): Promise<void> {
-  if (!hasSupabaseConfig() || !profile.id || profile.id === 'guest') return;
+async function syncProfileFromAuth(profile: UserProfile): Promise<{ success: boolean; message?: string }> {
+  if (!hasSupabaseConfig() || !profile.id || profile.id === 'guest') {
+    return { success: true };
+  }
 
   try {
-    await supabase.from('profiles').upsert({
+    const { error } = await supabase.from('profiles').upsert({
       id: profile.id,
       full_name: profile.full_name,
       email: profile.email,
       phone: profile.phone,
     }, { onConflict: 'id' });
-  } catch {
-    // Profile sync should not block auth.
+
+    if (error) {
+      console.warn('Profile sync failed:', error.message);
+      return { success: false, message: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.warn('Profile sync failed:', error);
+    return { success: false, message: 'Unable to sync profile to the database.' };
   }
 }
 
@@ -183,7 +193,17 @@ export async function signIn(
   if (hasSupabaseConfig()) {
     const response = await supabase.auth.signInWithPassword({ email, password });
     if (response.error || !response.data.session) {
-      return { success: false, message: response.error?.message ?? 'Unable to sign in' };
+      const message = response.error?.message ?? 'Unable to sign in';
+      const normalized = message.toLowerCase();
+      if (
+        normalized.includes('invalid login credentials') ||
+        normalized.includes('user not found') ||
+        normalized.includes('invalid email') ||
+        normalized.includes('invalid credentials')
+      ) {
+        return { success: false, message: 'This email is not registered. Please sign up first.' };
+      }
+      return { success: false, message };
     }
 
     const meta = response.data.user.user_metadata ?? {};
@@ -256,6 +276,16 @@ export async function signUp(payload: {
 }): Promise<{ success: boolean; message: string }> {
 
   if (hasSupabaseConfig()) {
+    const { data: existingProfiles } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', payload.email)
+      .limit(1);
+
+    if (existingProfiles && existingProfiles.length > 0) {
+      return { success: false, message: 'This email is already registered. Please log in instead.' };
+    }
+
     const response = await supabase.auth.signUp({
       email: payload.email,
       password: payload.password,
@@ -263,11 +293,41 @@ export async function signUp(payload: {
         data: { fullName: payload.fullName, phone: payload.phone, role: payload.role },
       },
     });
+
     if (response.error) {
+      const message = response.error.message?.toLowerCase() || '';
+      const duplicateEmailPatterns = [
+        'already registered',
+        'already exists',
+        'duplicate key',
+        'duplicate',
+        'user already exists',
+        'email already registered',
+        'already been registered',
+      ];
+
+      const isDuplicateEmail = duplicateEmailPatterns.some((pattern) => message.includes(pattern));
+      if (isDuplicateEmail) {
+        return { success: false, message: 'This email is already registered. Please log in instead.' };
+      }
+
+      if (response.error.status === 429 || message.includes('email rate limit exceeded') || message.includes('too many requests')) {
+        return {
+          success: false,
+          message: 'Too many signup attempts. Please wait a minute and try again.',
+        };
+      }
+
       return { success: false, message: response.error.message };
     }
+
+    const userId = response.data.user?.id;
+    if (!userId) {
+      return { success: false, message: 'Unable to create account. Please try again.' };
+    }
+
     const profile: UserProfile = {
-      id: response.data.user?.id ?? 'guest',
+      id: userId,
       email: payload.email,
       phone: payload.phone,
       role: payload.role,
@@ -277,13 +337,24 @@ export async function signUp(payload: {
       updated_at: new Date().toISOString(),
     };
 
-    await syncProfileFromAuth(profile);
+    const profileSyncResult = await syncProfileFromAuth(profile);
+    if (!profileSyncResult.success) {
+      console.warn('Profile sync warning:', profileSyncResult.message);
+    }
+
     await sendWelcomeEmail(payload.email, payload.fullName);
-    setSession({
-      user: profile,
-      token: response.data.session?.access_token ?? 'anonymous',
-    });
-    return { success: true, message: 'Account created' };
+
+    if (response.data.session?.access_token) {
+      setSession({
+        user: profile,
+        token: response.data.session.access_token,
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Account created successfully. Please check your email to verify your account.',
+    };
   }
 
   // Fallback (no Supabase config)

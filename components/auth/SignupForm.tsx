@@ -15,7 +15,6 @@ const registrationSchema = z.object({
   email: z.string().email('Enter a valid email'),
   phone: z.string().min(10, 'Enter a valid phone number'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['customer', 'barber']),
 });
 
 type RegistrationValues = z.infer<typeof registrationSchema>;
@@ -28,14 +27,17 @@ export function SignupForm() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<RegistrationValues>({ resolver: zodResolver(registrationSchema), defaultValues: { role: 'customer' } });
+  } = useForm<RegistrationValues>({ resolver: zodResolver(registrationSchema) });
 
   const onSubmit = async (values: RegistrationValues) => {
     setLoading(true);
     setError('');
 
     try {
-      const result = await signUp(values);
+      const result = await signUp({
+        ...values,
+        role: 'customer',
+      });
       if (result.success) {
         router.push('/customer/dashboard');
       } else {
@@ -126,24 +128,12 @@ export function SignupForm() {
           {errors.password && <p className="mt-2 text-xs text-destructive">{errors.password.message}</p>}
         </label>
 
-        <label className="block text-sm text-foreground">
-          Join as
-          <select
-            {...register('role')}
-            className="mt-2 w-full rounded-3xl border border-border bg-card px-4 py-3 text-foreground focus:outline-none"
-            disabled={loading}
-          >
-            <option value="customer">Customer</option>
-            <option value="barber">Barber</option>
-          </select>
-        </label>
-
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           type="submit"
           disabled={loading}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-semibold text-primary-foreground shadow-xl shadow-primary/20 disabled:opacity-50"
+          className="w-full inline-flex items-center justify-center gap-2 rounded-3xl bg-linear-to-r from-primary to-accent px-6 py-3 text-sm font-semibold text-primary-foreground shadow-xl shadow-primary/20 disabled:opacity-50"
         >
           {loading ? 'Creating account…' : 'Create account'}
           <ArrowRight className="w-4 h-4" />

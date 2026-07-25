@@ -18,8 +18,7 @@ export default function SignupPage() {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        {/* onSuccess → go to login so they verify email first */}
-        <AuthCard mode="signup" onSuccess={() => router.push('/auth/login')} />
+        <AuthCard mode="signup" />
       </div>
     </div>
   );

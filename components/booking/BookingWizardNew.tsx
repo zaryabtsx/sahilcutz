@@ -93,7 +93,7 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
       }
     }
 
-    if (paymentStatus === 'success' && paymentId && restoredBookingData) {
+    if ((paymentStatus === 'success' || paymentStatus === 'completed') && paymentId && restoredBookingData) {
       setPaymentData({ paymentId });
       // Create appointment after payment verification
       setTimeout(() => {
