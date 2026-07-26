@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     const supabaseAdmin = getAdminClient();
 
-    const [appointmentsResult, barbersResult, profilesResult, legacyUsersResult, slotsResult, servicesResult, authUsersResult] = await Promise.all([
+    const [appointmentsResult, barbersResult, profilesResult, legacyUsersResult, slotsResult, servicesResult, authUsersResult, paymentsResult] = await Promise.all([
       supabaseAdmin.from('appointments').select('*').order('start_at', { ascending: false }),
       supabaseAdmin.from('barbers').select('id, name'),
       supabaseAdmin.from('profiles').select('id, full_name, email, phone, created_at'),
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from('slots').select('*').order('slot_date').order('start_time'),
       supabaseAdmin.from('services').select('*').order('name'),
       supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      supabaseAdmin.from('payments').select('id, amount, status, payment_type, user_id, created_at, completed_at, payment_id').eq('status', 'completed'),
     ]);
 
     if (appointmentsResult.error) {
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       appointments: appointmentsResult.data ?? [],
+      payments: paymentsResult.data ?? [],
       barbers: barbersResult.data ?? [],
       users: Array.from(mergedUsers.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
       slots: slotsResult.data ?? [],

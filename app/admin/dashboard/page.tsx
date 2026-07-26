@@ -33,10 +33,22 @@ interface Appointment {
   appointment_time: string;
   status: 'Upcoming' | 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
   barber_id: string | null;
+  payment_id?: string | null;
+  amount?: number;
   is_emergency?: boolean;
   revenue: number;
   notes: string | null;
   barbers: { name: string } | null;
+}
+
+interface Payment {
+  id: string;
+  user_id: string;
+  amount: number;
+  status: string;
+  payment_type: string;
+  created_at: string;
+  completed_at?: string | null;
 }
 
 interface Barber   { id: string; name: string; }
@@ -184,6 +196,7 @@ export default function AdminDashboardPage() {
   const [ready, setReady]               = useState(false);
   const [fetching, setFetching]         = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [payments, setPayments]         = useState<Payment[]>([]);
   const [barbers, setBarbers]           = useState<Barber[]>([]);
   const [users, setUsers]               = useState<User[]>([]);
   const [slots, setSlots]               = useState<Slot[]>([]);
@@ -275,6 +288,7 @@ export default function AdminDashboardPage() {
           appointment_time: appointmentTime,
           status:           rawStatus,
           barber_id:        a.barber_id,
+          payment_id:      a.payment_id ?? null,
           is_emergency:     a.is_emergency ?? false,
           revenue:          Number(a.revenue ?? service?.price ?? a.amount ?? 0),
           notes:            a.notes ?? null,
@@ -286,6 +300,9 @@ export default function AdminDashboardPage() {
 
       setAppointments(apptData);
 
+      const paymentsList = Array.isArray(result.payments) ? result.payments : [];
+      setPayments(paymentsList as Payment[]);
+
       const slotData = slotRows.map((s: any) => ({
         ...s,
         barbers: s.barber_id
@@ -295,6 +312,9 @@ export default function AdminDashboardPage() {
 
       setSlots(slotData);
       setServices(servicesList as Service[]);
+      setPayments(
+        (Array.isArray(result.payments) ? result.payments : []) as Payment[]
+      );
       setUsers(
         usersList
           .map((p: any) => ({
@@ -340,7 +360,7 @@ export default function AdminDashboardPage() {
       }).length;
     })(),
     revenue: appointments
-      .filter(a => String(a.status || '').toLowerCase() === 'completed')
+      .filter(a => normalizeStatus(a.status) === 'Completed')
       .filter(a => {
         if (!analyticsStartDate && !analyticsEndDate) return true;
         const apptDate = a.appointment_date || null;
@@ -349,7 +369,19 @@ export default function AdminDashboardPage() {
         if (analyticsEndDate && apptDate > analyticsEndDate) return false;
         return true;
       })
-      .reduce((s, a) => s + Number(a.revenue), 0),
+      .reduce((s, a) => s + Number(a.revenue), 0)
+      + payments
+        .filter(p => String(p.status || '').toLowerCase() === 'completed')
+        .filter(p => {
+          if (!analyticsStartDate && !analyticsEndDate) return true;
+          const created = p.completed_at ? String(p.completed_at).slice(0, 10) : (p.created_at ? String(p.created_at).slice(0, 10) : null);
+          if (!created) return false;
+          if (analyticsStartDate && created < analyticsStartDate) return false;
+          if (analyticsEndDate && created > analyticsEndDate) return false;
+          return true;
+        })
+        .filter(p => !appointments.some(a => a.payment_id === p.id))
+        .reduce((s, p) => s + Number(p.amount), 0),
     customers: (() => {
       if (!analyticsStartDate && !analyticsEndDate) return users.length;
       return users.filter(u => {
@@ -369,7 +401,7 @@ export default function AdminDashboardPage() {
       if (analyticsEndDate && apptDate > analyticsEndDate) return false;
       return true;
     }).length,
-  }), [appointments, users, analyticsStartDate, analyticsEndDate]);
+  }), [appointments, payments, users, analyticsStartDate, analyticsEndDate]);
 
   const bookingTrend = useMemo(() => {
     const map: Record<string, { bookings: number; revenue: number }> = {};
@@ -379,7 +411,7 @@ export default function AdminDashboardPage() {
       if (analyticsEndDate && apptDate && apptDate > analyticsEndDate) return;
       if (!map[a.appointment_date]) map[a.appointment_date] = { bookings: 0, revenue: 0 };
       map[a.appointment_date].bookings++;
-      if (a.status === 'Completed') map[a.appointment_date].revenue += Number(a.revenue);
+      if (normalizeStatus(a.status) === 'Completed') map[a.appointment_date].revenue += Number(a.revenue);
     });
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).slice(-7)
       .map(([date, v]) => ({ day: new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }), ...v }));
