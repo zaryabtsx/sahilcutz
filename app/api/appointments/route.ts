@@ -160,16 +160,12 @@ async function sendBookingEmails({
     const customer = profile || user;
     const customerEmail = emailDetails?.customerEmail || customer?.email;
 
-    if (!customerEmail) {
-      console.warn(`Booking email skipped for appointment ${appointment.id}: missing customer email`);
-      return;
-    }
-
     const details = {
       customerName:
         emailDetails?.customerName ||
         customer?.full_name ||
-        customerEmail,
+        customerEmail ||
+        'Valued customer',
       customerEmail,
       serviceName:
         emailDetails?.serviceName ||
@@ -186,18 +182,28 @@ async function sendBookingEmails({
           : service?.price || 0,
     };
 
-    await Promise.all([
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@sahilcutzz.com';
+    const emailPromises = [];
+
+    if (customerEmail && shouldSendBookingEmail(appointment.status)) {
+      emailPromises.push(
+        sendMail({
+          to: details.customerEmail,
+          subject: 'Your Sahil Cutz booking is confirmed',
+          html: bookingConfirmationHtml(details),
+        }),
+      );
+    }
+
+    emailPromises.push(
       sendMail({
-        to: details.customerEmail,
-        subject: 'Your Sahil Cutz booking is confirmed',
-        html: bookingConfirmationHtml(details),
-      }),
-      sendMail({
-        to: process.env.ADMIN_EMAIL || 'admin@sahilcutzz.com',
+        to: adminEmail,
         subject: 'New Sahil Cutz booking received',
         html: adminBookingNotificationHtml(details),
       }),
-    ]);
+    );
+
+    await Promise.all(emailPromises);
   } catch (error) {
     console.error('Booking email trigger failed:', error instanceof Error ? error.message : error);
   }

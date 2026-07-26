@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { supabase } from '@/lib/supabase';
 import { useEffect, useMemo, useState } from 'react';
+import { getAdminToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -18,7 +19,7 @@ import {
   RefreshCw, Trash2, Edit3, Clock,
   Scissors, Timer, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { getSession, getAdminToken, adminLogout } from '@/lib/auth';
+import { getSession, adminLogout } from '@/lib/auth';
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -102,7 +103,8 @@ function isAppointmentExpired(appt: Appointment): boolean {
 }
 
 function appointmentDisplayStatus(appt: Appointment): Appointment['status'] {
-  return isAppointmentExpired(appt) ? 'Expired' : appt.status;
+  const normalizedStatus = normalizeStatus(appt.status);
+  return isAppointmentExpired({ ...appt, status: normalizedStatus }) ? 'Expired' : normalizedStatus;
 }
 
 function isSlotExpired(slot: Slot): boolean {
@@ -141,6 +143,28 @@ function isPastDateTime(date: string, time: string): boolean {
   return false;
 }
 
+function normalizeStatus(status: unknown): Appointment['status'] {
+  const value = String(status || '').trim().toLowerCase();
+  if (['completed', 'complete', 'confirmed', 'paid'].includes(value)) return 'Completed';
+  if (['in progress', 'in_progress', 'inprogress', 'active'].includes(value)) return 'In Progress';
+  if (['cancelled', 'canceled', 'cancelled_by_customer', 'cancelled_by_admin'].includes(value)) return 'Cancelled';
+  if (['expired', 'late'].includes(value)) return 'Expired';
+  return 'Upcoming';
+}
+
+function getDisplayDate(dateValue: unknown, fallbackDate: Date): string {
+  if (typeof dateValue === 'string' && dateValue.trim()) {
+    const trimmed = dateValue.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  }
+  return fallbackDate.toISOString().split('T')[0];
+}
+
+function getDisplayTime(timeValue: unknown, fallbackDate: Date): string {
+  if (typeof timeValue === 'string' && timeValue.trim()) return timeValue.slice(0, 5);
+  return fallbackDate.toTimeString().slice(0, 5);
+}
+
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
@@ -170,6 +194,8 @@ export default function AdminDashboardPage() {
   const [search, setSearch]             = useState('');
   const [slotBarberFilter, setSlotBarberFilter] = useState('All');
   const [slotDateFilter, setSlotDateFilter]     = useState(localDateKey());
+  const [analyticsStartDate, setAnalyticsStartDate] = useState('');
+  const [analyticsEndDate, setAnalyticsEndDate] = useState('');
 
   const [showModal, setShowModal]   = useState(false);
   const [form, setForm]             = useState<EmergencyForm>(EMPTY_FORM);
@@ -209,41 +235,49 @@ export default function AdminDashboardPage() {
   const fetchAll = async () => {
     setFetching(true);
     try {
-      const [appointmentsRes, barberRows, usersRes, slotRows, serviceRows] = await Promise.all([
-        supabase.from('appointments').select('*').order('start_at', { ascending: false }),
-        supabase.from('barbers').select('id, name'),
-        supabase.from('profiles').select('id, full_name, email, phone, created_at'),
-        supabase.from('slots').select('*').order('slot_date').order('start_time'),
-        supabase.from('services').select('*').order('name'),
-      ]);
+      const response = await fetch('/api/admin/dashboard', {
+        headers: {
+          'x-admin-token': getAdminToken() ?? '',
+        },
+      });
 
-      const barberList   = (barberRows.data ?? []) as Barber[];
-      const usersList    = (usersRes.data ?? []) as any[];
-      const servicesList = (serviceRows.data ?? []) as Service[];
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Unable to load admin dashboard data');
+      }
 
-      setBarbers(barberList);
+      const appointmentRows = Array.isArray(result.appointments) ? result.appointments : [];
+      const barberList = Array.isArray(result.barbers) ? result.barbers : [];
+      const usersList = Array.isArray(result.users) ? result.users : [];
+      const slotRows = Array.isArray(result.slots) ? result.slots : [];
+      const servicesList = Array.isArray(result.services) ? result.services : [];
 
-      // Transform appointments
-      const apptData = (appointmentsRes.data ?? []).map((a: any) => {
-        const startDate = new Date(a.start_at);
-        const user      = usersList.find((u: any) => u.id === a.user_id);
-        const service   = servicesList.find((s: any) => s.id === a.service_id);
+      setBarbers(barberList as Barber[]);
+
+      const apptData = appointmentRows.map((a: any) => {
+        const startDate = a.start_at ? new Date(a.start_at) : new Date(a.created_at || Date.now());
+        const rawStatus = normalizeStatus(a.status);
+        const user = usersList.find((u: any) => u.id === a.user_id || u.email === a.customer_email || u.email === a.email);
+        const service = servicesList.find((s: any) => s.id === a.service_id || s.name === a.service_name);
         const storedCustomer = splitStoredCustomer(a.customer_name);
-        const profileName = user?.full_name || user?.name;
-        const profilePhone = user?.phone ?? null;
+        const profileName = user?.full_name || user?.name || storedCustomer.name || a.customer_name || a.customer_email || a.email || 'Unknown User';
+        const profilePhone = user?.phone || a.customer_phone || storedCustomer.phone || a.phone || null;
+        const appointmentDate = getDisplayDate(a.appointment_date || a.date || a.start_at, startDate);
+        const appointmentTime = getDisplayTime(a.appointment_time || a.time, startDate);
+
         return {
           id: a.id,
-          customer_name:    profileName || storedCustomer.name || a.customer_email || 'Unknown User',
-          customer_phone:   profilePhone || a.customer_phone || storedCustomer.phone || null,
+          customer_name:    profileName,
+          customer_phone:   profilePhone,
           service_name:     service?.name || a.service_name || 'Unknown Service',
-          service_category: service?.category || 'Other',
-          appointment_date: startDate.toISOString().split('T')[0],
-          appointment_time: startDate.toTimeString().slice(0, 5),
-          status:           a.status,
+          service_category: service?.category || a.service_category || 'Other',
+          appointment_date: appointmentDate,
+          appointment_time: appointmentTime,
+          status:           rawStatus,
           barber_id:        a.barber_id,
           is_emergency:     a.is_emergency ?? false,
-          revenue:          service?.price || 0,
-          notes:            a.notes,
+          revenue:          Number(a.revenue ?? service?.price ?? a.amount ?? 0),
+          notes:            a.notes ?? null,
           barbers: a.barber_id
             ? { name: barberList.find((b: any) => b.id === a.barber_id)?.name ?? '' }
             : null,
@@ -252,8 +286,7 @@ export default function AdminDashboardPage() {
 
       setAppointments(apptData);
 
-      // Manually join barber name into slots
-      const slotData = (slotRows.data ?? []).map((s: any) => ({
+      const slotData = slotRows.map((s: any) => ({
         ...s,
         barbers: s.barber_id
           ? { name: barberList.find((b: any) => b.id === s.barber_id)?.name ?? '' }
@@ -261,15 +294,17 @@ export default function AdminDashboardPage() {
       })) as Slot[];
 
       setSlots(slotData);
-      setServices((serviceRows.data ?? []) as Service[]);
+      setServices(servicesList as Service[]);
       setUsers(
-        (usersRes.data ?? []).map((p: any) => ({
-          id:         p.id,
-          name:       p.full_name,
-          email:      p.email,
-          phone:      p.phone,
-          created_at: p.created_at,
-        })).sort((a: User, b: User) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        usersList
+          .map((p: any) => ({
+            id:         p.id,
+            name:       p.full_name || p.name || p.email,
+            email:      p.email,
+            phone:      p.phone,
+            created_at: p.created_at,
+          }))
+          .sort((a: User, b: User) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       );
     } catch (err) {
       console.error('fetchAll error:', err);
@@ -294,28 +329,73 @@ export default function AdminDashboardPage() {
 
   // ── Derived stats ──
   const stats = useMemo(() => ({
-    total:     appointments.length,
-    revenue:   appointments.filter(a => a.status === 'Completed').reduce((s, a) => s + Number(a.revenue), 0),
-    customers: users.length,
-    emergency: appointments.filter(a => a.is_emergency).length,
-  }), [appointments, users]);
+    total: (() => {
+      if (!analyticsStartDate && !analyticsEndDate) return appointments.length;
+      return appointments.filter(a => {
+        const apptDate = a.appointment_date || null;
+        if (!apptDate) return false;
+        if (analyticsStartDate && apptDate < analyticsStartDate) return false;
+        if (analyticsEndDate && apptDate > analyticsEndDate) return false;
+        return true;
+      }).length;
+    })(),
+    revenue: appointments
+      .filter(a => String(a.status || '').toLowerCase() === 'completed')
+      .filter(a => {
+        if (!analyticsStartDate && !analyticsEndDate) return true;
+        const apptDate = a.appointment_date || null;
+        if (!apptDate) return false;
+        if (analyticsStartDate && apptDate < analyticsStartDate) return false;
+        if (analyticsEndDate && apptDate > analyticsEndDate) return false;
+        return true;
+      })
+      .reduce((s, a) => s + Number(a.revenue), 0),
+    customers: (() => {
+      if (!analyticsStartDate && !analyticsEndDate) return users.length;
+      return users.filter(u => {
+        const created = u.created_at ? String(u.created_at).slice(0,10) : null;
+        if (!created) return false;
+        if (analyticsStartDate && created < analyticsStartDate) return false;
+        if (analyticsEndDate && created > analyticsEndDate) return false;
+        return true;
+      }).length;
+    })(),
+    emergency: appointments.filter(a => {
+      if (!a.is_emergency) return false;
+      if (!analyticsStartDate && !analyticsEndDate) return true;
+      const apptDate = a.appointment_date || null;
+      if (!apptDate) return false;
+      if (analyticsStartDate && apptDate < analyticsStartDate) return false;
+      if (analyticsEndDate && apptDate > analyticsEndDate) return false;
+      return true;
+    }).length,
+  }), [appointments, users, analyticsStartDate, analyticsEndDate]);
 
   const bookingTrend = useMemo(() => {
     const map: Record<string, { bookings: number; revenue: number }> = {};
     appointments.forEach(a => {
+      const apptDate = a.appointment_date || ((a as any).start_at ? String((a as any).start_at).slice(0,10) : null);
+      if (analyticsStartDate && apptDate && apptDate < analyticsStartDate) return;
+      if (analyticsEndDate && apptDate && apptDate > analyticsEndDate) return;
       if (!map[a.appointment_date]) map[a.appointment_date] = { bookings: 0, revenue: 0 };
       map[a.appointment_date].bookings++;
       if (a.status === 'Completed') map[a.appointment_date].revenue += Number(a.revenue);
     });
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).slice(-7)
       .map(([date, v]) => ({ day: new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }), ...v }));
-  }, [appointments]);
+  }, [appointments, analyticsStartDate, analyticsEndDate]);
 
   const servicePopularity = useMemo(() => {
     const counts: Record<string, number> = {};
-    appointments.forEach(a => { counts[a.service_category || 'Other'] = (counts[a.service_category || 'Other'] ?? 0) + 1; });
+    appointments.forEach(a => {
+      const apptDate = a.appointment_date || ((a as any).start_at ? String((a as any).start_at).slice(0,10) : null);
+      if (!apptDate) return; // skip entries without a concrete date for category analytics
+      if (analyticsStartDate && apptDate < analyticsStartDate) return;
+      if (analyticsEndDate && apptDate > analyticsEndDate) return;
+      counts[a.service_category || 'Other'] = (counts[a.service_category || 'Other'] ?? 0) + 1;
+    });
     return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 5).map(([name, value]) => ({ name, value }));
-  }, [appointments]);
+  }, [appointments, analyticsStartDate, analyticsEndDate]);
 
   const serviceCategories = useMemo(() => {
     const categorySet = new Set(DEFAULT_SERVICE_CATEGORIES);
@@ -712,6 +792,15 @@ export default function AdminDashboardPage() {
               </motion.div>
             ))}
           </div>
+
+            {/* ══ Analytics Date Range Filter ══ */}
+            <div className="mt-6 flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">Analytics range:</label>
+              <input className={INPUT_CLS + ' max-w-[160px]'} type="date" value={analyticsStartDate} onChange={e => setAnalyticsStartDate(e.target.value)} />
+              <span className="text-sm text-muted-foreground">—</span>
+              <input className={INPUT_CLS + ' max-w-[160px]'} type="date" value={analyticsEndDate} onChange={e => setAnalyticsEndDate(e.target.value)} />
+              <button onClick={() => { setAnalyticsStartDate(''); setAnalyticsEndDate(''); }} className="ml-2 inline-flex items-center gap-2 rounded-3xl border border-border bg-background/90 px-3 py-2 text-sm font-semibold text-muted-foreground hover:border-primary/40 hover:text-primary transition-all">Reset</button>
+            </div>
 
           {/* ══ Charts ══ */}
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
