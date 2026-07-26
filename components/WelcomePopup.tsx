@@ -39,6 +39,9 @@ export function WelcomePopup() {
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
           Walk in to the salon for a fresh cut or book directly on WhatsApp for a quick appointment request.
         </p>
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">
+          Availability may vary by worker, and the available team is supervised by Sahil.
+        </p>
 
         <div className="mt-6 space-y-3 rounded-3xl border border-border bg-background/80 p-4 text-sm">
           <div className="flex items-center gap-3">
