@@ -486,7 +486,7 @@ export function Navbar() {
                     </motion.a>
 
                     <motion.a
-                      href="/booking-new"
+                      href="/customer/dashboard"
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.4, duration: 0.32 }}
