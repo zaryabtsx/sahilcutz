@@ -174,7 +174,7 @@ function computeAvailableSlots(
         barber_id: barberId,
         slot_date: selectedDate,
         start_time: '09:00',
-        end_time: '18:00',
+        end_time: '19:00',
         is_available: true,
       } as AvailWindow];
 

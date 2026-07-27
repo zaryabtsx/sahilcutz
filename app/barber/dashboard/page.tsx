@@ -17,7 +17,7 @@ const BARBER: BarberProfile = {
   bio: 'Luxury barber and schedule manager, focused on premium performance.',
   working_hours: {
     start: '09:00',
-    end: '18:00',
+    end: '19:00',
     breaks: [{ start: '13:00', end: '14:00' }],
     off_days: ['Sun'],
   },

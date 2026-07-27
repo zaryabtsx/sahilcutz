@@ -82,7 +82,7 @@ const EMPTY_FORM: EmergencyForm = {
   appointment_date: new Date().toISOString().split('T')[0], appointment_time: '', revenue: '', notes: '',
 };
 const EMPTY_AVAILABILITY: AvailabilityForm = {
-  barber_id: '', slot_date: new Date().toISOString().split('T')[0], from_time: '09:00', to_time: '18:00',
+  barber_id: '', slot_date: new Date().toISOString().split('T')[0], from_time: '09:00', to_time: '19:00',
 };
 const EMPTY_SERVICE_FORM: ServiceForm = { name: '', duration_minutes: '30', price: '', category: '', description: '' };
 const DEFAULT_SERVICE_CATEGORIES = ['Hair Cut', 'Beard', 'Packages', 'Care & Styling', 'Color', 'Other'];
