@@ -695,14 +695,26 @@ export default function AdminDashboardPage() {
         description:      serviceForm.description.trim() || null,
         is_active:        true,
       };
+
+      const response = await fetch('/api/services', {
+        method: editingServiceId ? 'PATCH' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': getAdminToken() ?? '',
+        },
+        body: JSON.stringify(editingServiceId ? { ...payload, id: editingServiceId } : payload),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result?.error || 'Unable to save service.');
+      }
+
+      const savedService = result as Service;
       if (editingServiceId) {
-        const { data, error } = await supabase.from('services').update(payload).eq('id', editingServiceId).select().single();
-        if (error) throw error;
-        setServices(prev => prev.map(s => s.id === editingServiceId ? data as Service : s));
+        setServices(prev => prev.map(s => s.id === editingServiceId ? savedService : s));
       } else {
-        const { data, error } = await supabase.from('services').insert(payload).select().single();
-        if (error) throw error;
-        setServices(prev => [...prev, data as Service].sort((a, b) => a.name.localeCompare(b.name)));
+        setServices(prev => [...prev, savedService].sort((a, b) => a.name.localeCompare(b.name)));
       }
       setShowServiceModal(false);
     } catch (err: any) {
@@ -714,8 +726,20 @@ export default function AdminDashboardPage() {
 
   const deleteService = async (id: string) => {
     if (!confirm('Delete this service?')) return;
-    const { error } = await supabase.from('services').delete().eq('id', id);
-    if (!error) setServices(prev => prev.filter(s => s.id !== id));
+
+    try {
+      const response = await fetch(`/api/services?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': getAdminToken() ?? '' },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result?.error || 'Unable to delete service.');
+      }
+      setServices(prev => prev.filter(s => s.id !== id));
+    } catch (err: any) {
+      setServiceError(err.message ?? 'Unable to delete service.');
+    }
   };
 
   const toggleServiceActive = async (id: string, current: boolean) => {
