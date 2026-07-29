@@ -205,6 +205,10 @@ export default function AdminDashboardPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [dateFilter, setDateFilter]     = useState('');
   const [search, setSearch]             = useState('');
+  const [summaryMode, setSummaryMode]   = useState<'day' | 'range'>('day');
+  const [summaryDate, setSummaryDate]   = useState(localDateKey());
+  const [summaryStartDate, setSummaryStartDate] = useState(localDateKey());
+  const [summaryEndDate, setSummaryEndDate] = useState(localDateKey());
   const [slotBarberFilter, setSlotBarberFilter] = useState('All');
   const [slotDateFilter, setSlotDateFilter]     = useState(localDateKey());
   const [analyticsStartDate, setAnalyticsStartDate] = useState('');
@@ -416,6 +420,30 @@ export default function AdminDashboardPage() {
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).slice(-7)
       .map(([date, v]) => ({ day: new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }), ...v }));
   }, [appointments, analyticsStartDate, analyticsEndDate]);
+
+  const summaryAppointments = useMemo(() => {
+    return appointments.filter(a => {
+      const apptDate = a.appointment_date || null;
+      if (!apptDate) return false;
+      if (summaryMode === 'day') {
+        if (!summaryDate) return false;
+        return apptDate === summaryDate;
+      }
+      if (summaryStartDate && apptDate < summaryStartDate) return false;
+      if (summaryEndDate && apptDate > summaryEndDate) return false;
+      return true;
+    });
+  }, [appointments, summaryMode, summaryDate, summaryStartDate, summaryEndDate]);
+
+  const summaryCounts = useMemo(() => {
+    const list = summaryAppointments;
+    return {
+      total: list.length,
+      completed: list.filter(a => normalizeStatus(a.status) === 'Completed').length,
+      upcoming: list.filter(a => ['Upcoming', 'In Progress'].includes(normalizeStatus(a.status))).length,
+      cancelled: list.filter(a => normalizeStatus(a.status) === 'Cancelled').length,
+    };
+  }, [summaryAppointments]);
 
   const servicePopularity = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -857,6 +885,48 @@ export default function AdminDashboardPage() {
               <input className={INPUT_CLS + ' max-w-[160px]'} type="date" value={analyticsEndDate} onChange={e => setAnalyticsEndDate(e.target.value)} />
               <button onClick={() => { setAnalyticsStartDate(''); setAnalyticsEndDate(''); }} className="ml-2 inline-flex items-center gap-2 rounded-3xl border border-border bg-background/90 px-3 py-2 text-sm font-semibold text-muted-foreground hover:border-primary/40 hover:text-primary transition-all">Reset</button>
             </div>
+
+          <section className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-primary">Appointment summary</p>
+                <h2 className="mt-3 text-2xl font-black text-foreground">Today’s bookings or any selected range</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Choose a single day or a start/end date to see how many appointments were booked and what status they’re in.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={() => { setSummaryMode('day'); setSummaryDate(localDateKey()); setSummaryStartDate(localDateKey()); setSummaryEndDate(localDateKey()); }} className="rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground hover:border-primary/40 transition-colors">Today</button>
+                <button onClick={() => { setSummaryMode('range'); setSummaryStartDate(''); setSummaryEndDate(''); }} className="rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground hover:border-primary/40 transition-colors">Date range</button>
+                {summaryMode === 'day' ? (
+                  <input type="date" value={summaryDate} onChange={e => setSummaryDate(e.target.value)} className={INPUT_CLS + ' max-w-[180px]'} />
+                ) : (
+                  <>
+                    <input type="date" value={summaryStartDate} onChange={e => setSummaryStartDate(e.target.value)} className={INPUT_CLS + ' max-w-[180px]'} />
+                    <span className="text-sm text-muted-foreground">to</span>
+                    <input type="date" value={summaryEndDate} onChange={e => setSummaryEndDate(e.target.value)} className={INPUT_CLS + ' max-w-[180px]'} />
+                  </>
+                )}
+                <button onClick={() => { setSummaryMode('day'); setSummaryDate(localDateKey()); setSummaryStartDate(localDateKey()); setSummaryEndDate(localDateKey()); }} className="rounded-2xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">Reset</button>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
+              {[
+                { label: 'Total', value: summaryCounts.total, color: '#d8b76b' },
+                { label: 'Completed', value: summaryCounts.completed, color: '#4ade80' },
+                { label: 'Upcoming / In Progress', value: summaryCounts.upcoming, color: '#f0c85a' },
+                { label: 'Cancelled', value: summaryCounts.cancelled, color: '#f87171' },
+              ].map(item => (
+                <div key={item.label} className="rounded-[24px] border border-border bg-background/90 p-4">
+                  <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">{item.label}</p>
+                  <p className="mt-3 text-3xl font-black text-foreground" style={{ color: item.color }}>{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-4 text-sm text-muted-foreground">
+              Showing <span className="font-semibold text-foreground">{summaryCounts.total}</span> appointment{summaryCounts.total === 1 ? '' : 's'} for <span className="font-semibold text-foreground">{summaryMode === 'day' ? fmtDate(summaryDate) : `${summaryStartDate ? fmtDate(summaryStartDate) : 'any start date'} → ${summaryEndDate ? fmtDate(summaryEndDate) : 'any end date'}`}</span>.
+            </p>
+          </section>
 
           {/* ══ Charts ══ */}
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
