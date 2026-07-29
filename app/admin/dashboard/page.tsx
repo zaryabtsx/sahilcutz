@@ -445,6 +445,33 @@ export default function AdminDashboardPage() {
     };
   }, [summaryAppointments]);
 
+  const summaryRevenue = useMemo(() => {
+    const completedAppointmentRevenue = summaryAppointments
+      .filter(a => normalizeStatus(a.status) === 'Completed')
+      .reduce((sum, a) => sum + Number(a.revenue || 0), 0);
+
+    const paymentDateMatches = (date: string | null) => {
+      if (!date) return false;
+      if (summaryMode === 'day') {
+        return summaryDate ? date === summaryDate : false;
+      }
+      if (summaryStartDate && date < summaryStartDate) return false;
+      if (summaryEndDate && date > summaryEndDate) return false;
+      return true;
+    };
+
+    const standalonePayments = payments
+      .filter(p => ['completed', 'success', 'paid', 'settled'].includes(String(p.status || '').toLowerCase()))
+      .filter(p => {
+        const completed = p.completed_at ? String(p.completed_at).slice(0, 10) : (p.created_at ? String(p.created_at).slice(0, 10) : null);
+        return paymentDateMatches(completed);
+      })
+      .filter(p => !summaryAppointments.some(a => a.payment_id === p.id))
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+    return completedAppointmentRevenue + standalonePayments;
+  }, [summaryAppointments, payments, summaryMode, summaryDate, summaryStartDate, summaryEndDate]);
+
   const servicePopularity = useMemo(() => {
     const counts: Record<string, number> = {};
     appointments.forEach(a => {
@@ -909,12 +936,13 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-4">
+            <div className="mt-6 grid gap-4 md:grid-cols-5">
               {[
                 { label: 'Total', value: summaryCounts.total, color: '#d8b76b' },
                 { label: 'Completed', value: summaryCounts.completed, color: '#4ade80' },
                 { label: 'Upcoming / In Progress', value: summaryCounts.upcoming, color: '#f0c85a' },
                 { label: 'Cancelled', value: summaryCounts.cancelled, color: '#f87171' },
+                { label: 'Payment', value: `PKR ${summaryRevenue.toLocaleString()}`, color: '#38bdf8' },
               ].map(item => (
                 <div key={item.label} className="rounded-[24px] border border-border bg-background/90 p-4">
                   <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">{item.label}</p>
@@ -924,7 +952,7 @@ export default function AdminDashboardPage() {
             </div>
 
             <p className="mt-4 text-sm text-muted-foreground">
-              Showing <span className="font-semibold text-foreground">{summaryCounts.total}</span> appointment{summaryCounts.total === 1 ? '' : 's'} for <span className="font-semibold text-foreground">{summaryMode === 'day' ? fmtDate(summaryDate) : `${summaryStartDate ? fmtDate(summaryStartDate) : 'any start date'} → ${summaryEndDate ? fmtDate(summaryEndDate) : 'any end date'}`}</span>.
+              Showing <span className="font-semibold text-foreground">{summaryCounts.total}</span> appointment{summaryCounts.total === 1 ? '' : 's'} and <span className="font-semibold text-foreground">PKR {summaryRevenue.toLocaleString()}</span> in payments for <span className="font-semibold text-foreground">{summaryMode === 'day' ? fmtDate(summaryDate) : `${summaryStartDate ? fmtDate(summaryStartDate) : 'any start date'} → ${summaryEndDate ? fmtDate(summaryEndDate) : 'any end date'}`}</span>.
             </p>
           </section>
 

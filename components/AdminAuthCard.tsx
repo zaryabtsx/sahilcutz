@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState } from 'react';
@@ -94,7 +95,7 @@ export function AdminAuthCard({ onSuccess }: AdminAuthCardProps) {
                 id="email"
                 type="email"
                 {...(register as any)('email')}
-                placeholder="admin@sahilcutzz.com"
+                placeholder=""
                 className="w-full rounded-2xl border border-border bg-background/90 px-11 py-3 text-foreground outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/30"
               />
             </div>
