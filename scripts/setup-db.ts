@@ -80,7 +80,7 @@ async function setupDatabase() {
     console.log('Next steps:');
     console.log('1. Run: npm run dev');
     console.log('2. Visit: http://localhost:3000');
-    console.log('3. Login with: admin@sahilcutzz.com / admin123\n');
+    console.log('3. Login with: Sahilcutz1s@gmail.com / Sahilcutz1s@&\n');
   } catch (error) {
     console.error('❌ Setup failed:', error);
     process.exit(1);

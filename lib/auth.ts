@@ -8,8 +8,8 @@ const SESSION_KEY = 'sahilcutzz_session';
 const ADMIN_TOKEN_COOKIE = 'admin_token';
 
 export const ADMIN_CREDENTIALS = {
-  email: 'admin@sahilcutzz.com',
-  password: 'admin123',
+  email: 'Sahilcutz1s@gmail.com',
+  password: 'Sahilcutz1s@&',
   role: 'admin' as UserRole,
   fullName: 'Sahil Cutz',
 };
@@ -133,7 +133,7 @@ export async function isAdminAuthenticated(): Promise<boolean> {
 
 export function validateAdminCredentials(email: string, password: string): boolean {
   return (
-    email.trim().toLowerCase() === ADMIN_CREDENTIALS.email &&
+    email.trim().toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase() &&
     password === ADMIN_CREDENTIALS.password
   );
 }

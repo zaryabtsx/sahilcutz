@@ -75,7 +75,7 @@ export function AdminLoginForm() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@sahilcutzz.com"
+              placeholder="Sahilcutz1s@gmail.com"
               disabled={loading}
               className="w-full px-4 py-3 bg-muted border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               required
@@ -111,7 +111,7 @@ export function AdminLoginForm() {
               </button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Demo: admin@sahilcutzz.com / admin123
+              Demo: Sahilcutz1s@gmail.com / Sahilcutz1s@&
             </p>
           </div>
 
