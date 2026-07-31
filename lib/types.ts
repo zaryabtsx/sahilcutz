@@ -23,6 +23,7 @@ export interface BarberProfile {
     end: string;
     breaks: { start: string; end: string }[];
     off_days: string[];
+    unavailable_dates?: string[];
   };
   is_available: boolean;
   created_at: string;

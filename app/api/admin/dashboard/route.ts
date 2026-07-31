@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     const [appointmentsResult, barbersResult, profilesResult, legacyUsersResult, slotsResult, servicesResult, authUsersResult, paymentsResult] = await Promise.all([
       supabaseAdmin.from('appointments').select('*').order('start_at', { ascending: false }),
-      supabaseAdmin.from('barbers').select('id, name'),
+      supabaseAdmin.from('barbers').select('*'),
       supabaseAdmin.from('profiles').select('id, full_name, email, phone, created_at'),
       supabaseAdmin.from('users').select('id, full_name, email, phone, created_at'),
       supabaseAdmin.from('slots').select('*').order('slot_date').order('start_time'),

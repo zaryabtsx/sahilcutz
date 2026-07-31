@@ -2,7 +2,7 @@ import type { AppointmentItem, BarberProfile, NotificationItem, ServiceItem, Use
 
 export const initialBarbers: BarberProfile[] = [
   {
-    id: 'barber-sahil',
+    id: '550e8400-e29b-41d4-a716-446655440000',
     name: 'Sahil',
     slug: 'sahil',
     image_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80',
@@ -225,7 +225,7 @@ export const initialCustomers: UserProfile[] = [
     email: 'maya@example.com',
     phone: '+1 (555) 908-2211',
     role: 'customer',
-    favorite_barber_id: 'barber-sahil',
+    favorite_barber_id: '550e8400-e29b-41d4-a716-446655440000',
     created_at: '2026-05-01T00:00:00Z',
     updated_at: '2026-05-01T00:00:00Z',
   },
@@ -235,7 +235,7 @@ export const initialAppointments: AppointmentItem[] = [
   {
     id: 'appointment-001',
     user_id: 'customer-1',
-    barber_id: 'barber-sahil',
+    barber_id: '550e8400-e29b-41d4-a716-446655440000',
     service_id: 'service-haircut',
     start_at: '2026-05-15T14:00:00Z',
     end_at: '2026-05-15T14:40:00Z',
@@ -248,7 +248,7 @@ export const initialAppointments: AppointmentItem[] = [
   {
     id: 'appointment-002',
     user_id: 'customer-1',
-    barber_id: 'barber-sahil',
+    barber_id: '550e8400-e29b-41d4-a716-446655440000',
     service_id: 'service-beard',
     start_at: '2026-05-16T11:00:00Z',
     end_at: '2026-05-16T11:35:00Z',

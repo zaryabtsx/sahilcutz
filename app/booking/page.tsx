@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { isAuthenticated, getSession } from '@/lib/auth';
-import { initialServices } from '@/lib/mockData';
+import { initialServices, initialBarbers } from '@/lib/mockData';
 import { isLastTwoDaysOfMonth } from '@/lib/scheduling';
 import { getServiceCategoryName, sortCategoryEntries } from '@/lib/serviceCategories';
 import { getAdvancePaymentAmount } from '@/lib/volzix';
@@ -52,6 +52,13 @@ interface ComputedSlot {
 interface Barber {
   id: string;
   name: string;
+  working_hours?: {
+    start: string;
+    end: string;
+    breaks?: { start: string; end: string }[];
+    off_days?: string[];
+    unavailable_dates?: string[];
+  };
 }
 
 interface BookedAppt {
@@ -163,8 +170,26 @@ function computeAvailableSlots(
   durationMins: number,
   barberId: string,
   selectedDate: string,
+  barbers: Barber[] = [],
 ): ComputedSlot[] {
   if (isLastTwoDaysOfMonth(selectedDate)) return [];
+
+  const barberObj = barbers.find((b) => b.id === barberId);
+  if (barberObj && barberObj.working_hours) {
+    const d = new Date(`${selectedDate}T00:00:00`);
+    const dayShort = d.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayLong = d.toLocaleDateString('en-US', { weekday: 'long' });
+    const isOffDay = barberObj.working_hours.off_days?.some(
+      (off) => off.toLowerCase() === dayShort.toLowerCase() || off.toLowerCase() === dayLong.toLowerCase()
+    );
+    const isBlockedDate = barberObj.working_hours.unavailable_dates?.some(
+      (bd) => bd.slice(0, 10) === selectedDate.slice(0, 10)
+    );
+
+    if (isOffDay || isBlockedDate) {
+      return [];
+    }
+  }
 
   const barberWindows = windows.filter(w => w.barber_id === barberId && w.is_available);
   const effectiveWindows = barberWindows.length
@@ -173,8 +198,8 @@ function computeAvailableSlots(
         id: `default-${barberId}-${selectedDate}`,
         barber_id: barberId,
         slot_date: selectedDate,
-        start_time: '09:00',
-        end_time: '19:00',
+        start_time: barberObj?.working_hours?.start || '09:00',
+        end_time: barberObj?.working_hours?.end || '19:00',
         is_available: true,
       } as AvailWindow];
 
@@ -331,11 +356,12 @@ function BookingPageContent() {
       setLoading(true);
       const [svcRes, barberRes] = await Promise.all([
         supabase.from('services').select('*').eq('is_active', true).order('name'),
-        supabase.from('barbers').select('id, name'),
+        supabase.from('barbers').select('*'),
       ]);
       const loadedServices = (svcRes.error || !svcRes.data?.length ? initialServices : svcRes.data) as Service[];
+      const loadedBarbers = (barberRes.error || !barberRes.data?.length ? initialBarbers : barberRes.data) as Barber[];
       setServices(loadedServices);
-      setBarbers((barberRes.data ?? []) as Barber[]);
+      setBarbers(loadedBarbers);
 
       const matches = requestedServiceTokens
         .map((token) => findServiceByToken(token, loadedServices))
@@ -386,7 +412,7 @@ function BookingPageContent() {
     if (!selectedServices.length || !selectedDuration || !barbers.length) return [];
     const result: ComputedSlot[] = [];
     barbers.forEach(barber => {
-      result.push(...computeAvailableSlots(windows, booked, selectedDuration, barber.id, selectedDate));
+      result.push(...computeAvailableSlots(windows, booked, selectedDuration, barber.id, selectedDate, barbers));
     });
     return result.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.barber_id.localeCompare(b.barber_id));
   }, [selectedServices.length, selectedDuration, windows, booked, barbers, selectedDate]);
@@ -923,13 +949,32 @@ function BookingPageContent() {
                           const isLastTwo = isLastTwoDaysOfMonth(dateStr);
                           const isSelected = dateStr === selectedDate;
                           const isToday    = dateStr === todayStr;
+
+                          const isUnavailable = (() => {
+                            const barber = barbers.find((b) => !selectedBarber || b.id === selectedBarber);
+                            if (!barber || !barber.working_hours) return false;
+                            const d = new Date(`${dateStr}T00:00:00`);
+                            const dayShort = d.toLocaleDateString('en-US', { weekday: 'short' });
+                            const dayLong = d.toLocaleDateString('en-US', { weekday: 'long' });
+                            const isOffDay = barber.working_hours.off_days?.some(
+                              (off) => off.toLowerCase() === dayShort.toLowerCase() || off.toLowerCase() === dayLong.toLowerCase()
+                            );
+                            const isBlockedDate = barber.working_hours.unavailable_dates?.some(
+                              (bd) => bd.slice(0, 10) === dateStr
+                            );
+                            return Boolean(isOffDay || isBlockedDate);
+                          })();
+
                           return (
                             <button
                               key={day}
-                              onClick={() => !isPast && !isLastTwo && pickDate(day)}
-                              disabled={isPast || isLastTwo}
+                              onClick={() => !isPast && !isLastTwo && !isUnavailable && pickDate(day)}
+                              disabled={isPast || isLastTwo || isUnavailable}
+                              title={isUnavailable ? 'Barber unavailable on this date' : ''}
                               className={`rounded-xl aspect-square flex items-center justify-center text-sm font-semibold transition-all ${
-                                isLastTwo
+                                isUnavailable
+                                  ? 'text-red-400/40 cursor-not-allowed bg-red-500/5 line-through'
+                                  : isLastTwo
                                   ? 'text-muted-foreground/30 cursor-not-allowed bg-muted/40'
                                   : isPast
                                   ? 'text-muted-foreground/30 cursor-not-allowed'

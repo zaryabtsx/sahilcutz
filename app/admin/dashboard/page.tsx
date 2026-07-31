@@ -51,7 +51,18 @@ interface Payment {
   completed_at?: string | null;
 }
 
-interface Barber   { id: string; name: string; }
+interface Barber   {
+  id: string;
+  name: string;
+  is_available?: boolean;
+  working_hours?: {
+    start: string;
+    end: string;
+    breaks?: { start: string; end: string }[];
+    off_days?: string[];
+    unavailable_dates?: string[];
+  };
+}
 interface User     { id: string; name: string; email: string; phone: string | null; created_at: string; }
 interface Service  { id: string; name: string; duration_minutes: number; price: number; description: string | null; category: string | null; is_active: boolean; }
 interface Slot     { id: string; barber_id: string; slot_date: string; start_time: string; end_time: string; is_available: boolean; barbers?: { name: string } | null; }
@@ -236,6 +247,98 @@ export default function AdminDashboardPage() {
   const [editingId, setEditingId]                 = useState<string | null>(null);
   const [appointmentPage, setAppointmentPage]     = useState(1);
   const [customerPage, setCustomerPage]           = useState(1);
+
+  // ── Unavailability Management State ──
+  const [unavailBarberId, setUnavailBarberId] = useState<string>('');
+  const [selectedOffDays, setSelectedOffDays] = useState<string[]>(['Sun']);
+  const [blockedDates, setBlockedDates]       = useState<string[]>([]);
+  const [newBlockedDate, setNewBlockedDate]   = useState<string>('');
+  const [unavailSaving, setUnavailSaving]     = useState<boolean>(false);
+  const [unavailMessage, setUnavailMessage]   = useState<string>('');
+
+  useEffect(() => {
+    if (barbers.length > 0 && !unavailBarberId) {
+      setUnavailBarberId(barbers[0].id);
+    }
+  }, [barbers, unavailBarberId]);
+
+  useEffect(() => {
+    if (!unavailBarberId) return;
+    const b = barbers.find((item) => item.id === unavailBarberId);
+    if (b && b.working_hours) {
+      setSelectedOffDays(b.working_hours.off_days || ['Sun']);
+      setBlockedDates(b.working_hours.unavailable_dates || []);
+    }
+  }, [unavailBarberId, barbers]);
+
+  const toggleOffDay = (day: string) => {
+    setSelectedOffDays((prev) =>
+      prev.some((d) => d.toLowerCase() === day.toLowerCase())
+        ? prev.filter((d) => d.toLowerCase() !== day.toLowerCase())
+        : [...prev, day]
+    );
+  };
+
+  const addBlockedDate = () => {
+    if (!newBlockedDate) return;
+    if (!blockedDates.includes(newBlockedDate)) {
+      setBlockedDates((prev) => [...prev, newBlockedDate].sort());
+    }
+    setNewBlockedDate('');
+  };
+
+  const removeBlockedDate = (dateToRemove: string) => {
+    setBlockedDates((prev) => prev.filter((d) => d !== dateToRemove));
+  };
+
+  const saveUnavailabilitySettings = async () => {
+    if (!unavailBarberId) return;
+    setUnavailSaving(true);
+    setUnavailMessage('');
+    try {
+      const targetBarber = barbers.find((b) => b.id === unavailBarberId);
+      const currentWorkingHours = targetBarber?.working_hours || {
+        start: '09:00',
+        end: '19:00',
+        breaks: [{ start: '13:00', end: '14:00' }],
+        off_days: ['Sun'],
+      };
+
+      const updatedWorkingHours = {
+        ...currentWorkingHours,
+        off_days: selectedOffDays,
+        unavailable_dates: blockedDates,
+      };
+
+      const res = await fetch('/api/barbers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: unavailBarberId,
+          working_hours: updatedWorkingHours,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save unavailability settings');
+      }
+
+      setBarbers((prev) =>
+        prev.map((b) =>
+          b.id === unavailBarberId ? { ...b, working_hours: updatedWorkingHours } : b
+        )
+      );
+
+      setUnavailMessage(
+        '✅ Unavailability settings saved successfully! Users cannot view or book slots on these days.'
+      );
+    } catch (err: any) {
+      setUnavailMessage(`❌ Error: ${err.message || 'Unable to save settings'}`);
+    } finally {
+      setUnavailSaving(false);
+    }
+  };
 
   // ── Auth guard ──
   useEffect(() => {
@@ -1334,6 +1437,138 @@ export default function AdminDashboardPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </section>
+
+          {/* ══ Unavailability & Off Days Manager ══ */}
+          <section className="rounded-[32px] border border-border bg-card/90 p-8 shadow-2xl backdrop-blur-xl">
+            <div className="flex flex-col gap-2">
+              <p className="text-xs uppercase tracking-[0.35em] text-primary">Unavailability Control</p>
+              <h2 className="text-2xl font-black text-foreground">Select Days of Unavailability</h2>
+              <p className="text-sm text-muted-foreground">
+                Configure weekly off-days or specific blocked dates when customers cannot view or book appointment slots.
+              </p>
+            </div>
+
+            <div className="mt-6 space-y-6">
+              {/* Barber Selector */}
+              {barbers.length > 1 && (
+                <div>
+                  <label className="block text-xs uppercase tracking-[0.25em] text-muted-foreground mb-2">Select Barber</label>
+                  <select
+                    value={unavailBarberId}
+                    onChange={(e) => setUnavailBarberId(e.target.value)}
+                    className="rounded-2xl border border-border bg-background px-4 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50"
+                  >
+                    {barbers.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Weekly Off Days */}
+              <div>
+                <h3 className="text-sm font-bold text-foreground mb-3 uppercase tracking-wider">Weekly Off-Days</h3>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { short: 'Sun', full: 'Sunday' },
+                    { short: 'Mon', full: 'Monday' },
+                    { short: 'Tue', full: 'Tuesday' },
+                    { short: 'Wed', full: 'Wednesday' },
+                    { short: 'Thu', full: 'Thursday' },
+                    { short: 'Fri', full: 'Friday' },
+                    { short: 'Sat', full: 'Saturday' },
+                  ].map((dayObj) => {
+                    const isSelected = selectedOffDays.some(
+                      (d) => d.toLowerCase() === dayObj.short.toLowerCase() || d.toLowerCase() === dayObj.full.toLowerCase()
+                    );
+                    return (
+                      <button
+                        key={dayObj.short}
+                        type="button"
+                        onClick={() => toggleOffDay(dayObj.short)}
+                        className={`px-4 py-2 rounded-2xl text-xs font-bold border transition-all ${
+                          isSelected
+                            ? 'bg-red-500/20 border-red-500/50 text-red-400 shadow-md'
+                            : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {dayObj.full} {isSelected ? '(OFF)' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Specific Unavailable Dates */}
+              <div>
+                <h3 className="text-sm font-bold text-foreground mb-3 uppercase tracking-wider">Block Specific Dates</h3>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="date"
+                    min={localDateKey()}
+                    value={newBlockedDate}
+                    onChange={(e) => setNewBlockedDate(e.target.value)}
+                    className="rounded-2xl border border-border bg-background px-4 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={addBlockedDate}
+                    disabled={!newBlockedDate}
+                    className="rounded-2xl bg-primary/20 border border-primary/40 px-4 py-2 text-xs font-bold text-primary hover:bg-primary/30 transition-all disabled:opacity-40"
+                  >
+                    + Add Date to Unavailability
+                  </button>
+                </div>
+
+                {/* Blocked Dates List */}
+                {blockedDates.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {blockedDates.map((dateStr) => (
+                      <span
+                        key={dateStr}
+                        className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-400"
+                      >
+                        📅 {fmtDate(dateStr)}
+                        <button
+                          type="button"
+                          onClick={() => removeBlockedDate(dateStr)}
+                          className="hover:text-red-200 transition-colors ml-1 font-bold"
+                          title="Unblock date"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Feedback message */}
+              {unavailMessage && (
+                <div
+                  className={`p-4 rounded-2xl text-xs font-semibold ${
+                    unavailMessage.startsWith('✅')
+                      ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                      : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                  }`}
+                >
+                  {unavailMessage}
+                </div>
+              )}
+
+              {/* Save button */}
+              <div>
+                <button
+                  type="button"
+                  onClick={saveUnavailabilitySettings}
+                  disabled={unavailSaving}
+                  className="rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  {unavailSaving ? 'Saving Settings...' : 'Save Unavailability Settings'}
+                </button>
+              </div>
             </div>
           </section>
 

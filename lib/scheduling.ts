@@ -60,10 +60,14 @@ export function generateAvailabilitySlots(
   stepMinutes = 15,
 ): TimeSlot[] {
   const dateKey = formatDateKey(date);
-  const dayName = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
-  const isOffDay = barber.working_hours.off_days.includes(dayName);
+  const dayNameShort = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
+  const dayNameLong = new Date(date).toLocaleDateString('en-US', { weekday: 'long' });
+  const isOffDay = barber.working_hours.off_days?.some(
+    (d: string) => d.toLowerCase() === dayNameShort.toLowerCase() || d.toLowerCase() === dayNameLong.toLowerCase()
+  );
+  const isUnavailableDate = barber.working_hours.unavailable_dates?.includes(dateKey);
 
-  if (!barber.is_available || isOffDay || isLastTwoDaysOfMonth(date)) {
+  if (!barber.is_available || isOffDay || isUnavailableDate || isLastTwoDaysOfMonth(date)) {
     return [];
   }
 

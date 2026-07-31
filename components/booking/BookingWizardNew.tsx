@@ -463,6 +463,30 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
                 onChange={(e) => setBookingData({ ...bookingData, date: e.target.value })}
                 className="w-full px-4 py-3 rounded-2xl border border-border bg-card text-foreground focus:outline-none focus:border-primary transition-all"
               />
+
+              {(() => {
+                if (!bookingData.date || !bookingData.barberId) return null;
+                const barber = barbers.find((b) => b.id === bookingData.barberId);
+                if (!barber || !barber.working_hours) return null;
+
+                const d = new Date(`${bookingData.date}T00:00:00`);
+                const dayShort = d.toLocaleDateString('en-US', { weekday: 'short' });
+                const dayLong = d.toLocaleDateString('en-US', { weekday: 'long' });
+                const isOffDay = barber.working_hours.off_days?.some(
+                  (off: string) => off.toLowerCase() === dayShort.toLowerCase() || off.toLowerCase() === dayLong.toLowerCase()
+                );
+                const isBlockedDate = barber.working_hours.unavailable_dates?.includes(bookingData.date);
+
+                if (isOffDay || isBlockedDate) {
+                  return (
+                    <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-semibold flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 shrink-0" />
+                      <span>The barber is unavailable on this date ({isOffDay ? 'Weekly Off-Day' : 'Blocked Date'}). Please pick a different date.</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           )}
 

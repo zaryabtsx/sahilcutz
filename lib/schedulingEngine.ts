@@ -43,13 +43,17 @@ export async function generateAvailableSlots(
 const [workStartHour, workStartMin] = workingHours.start.split(':').map(Number);
 const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
 
-  // Get day of week for breaks
-  const dayOfWeek = localDate.toLocaleString('en-US', { weekday: 'short' });
-  const isOffDay = workingHours.off_days?.includes(dayOfWeek);
+  // Get day of week for off days & check specific unavailable dates
+  const dayOfWeekShort = localDate.toLocaleString('en-US', { weekday: 'short' });
+  const dayOfWeekLong = localDate.toLocaleString('en-US', { weekday: 'long' });
+  const isOffDay = workingHours.off_days?.some(
+    (d: string) => d.toLowerCase() === dayOfWeekShort.toLowerCase() || d.toLowerCase() === dayOfWeekLong.toLowerCase()
+  );
+  const isUnavailableDate = workingHours.unavailable_dates?.includes(date);
   const manualWindows = await getManualAvailabilityWindows(barberId, date);
   const isClosedByDefault = !manualWindows.length && isLastTwoDaysOfMonth(date);
 
-  if (isOffDay || isClosedByDefault) {
+  if (isOffDay || isUnavailableDate || isClosedByDefault) {
     return [];
   }
 
