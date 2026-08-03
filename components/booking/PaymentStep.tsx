@@ -111,8 +111,11 @@ export function PaymentStep({
       });
 
       if (!response.ok) {
-        const errorData = await parseJsonResponse<Record<string, unknown>>(response).catch(() => ({}));
-        throw new Error(errorData.error as string || 'Failed to initiate payment');
+        const errorData = await parseJsonResponse<Record<string, unknown>>(response).catch(() => ({} as Record<string, unknown>));
+        const errorMessage = typeof errorData.error === 'string'
+          ? errorData.error
+          : 'Failed to initiate payment';
+        throw new Error(errorMessage);
       }
 
       const data = await parseJsonResponse<Record<string, unknown>>(response);
