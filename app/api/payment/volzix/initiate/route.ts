@@ -110,27 +110,49 @@ export async function POST(request: NextRequest) {
       phone: customerPhone,
     }, { onConflict: 'id' });
 
-    const { data: paymentRecord, error: paymentError } = await supabase
+    const paymentInsert = {
+      id: paymentId,
+      provider: 'volzix',
+      user_id: userId,
+      order_id: orderId,
+      web_id: webId,
+      amount,
+      currency: 'PKR',
+      status: 'pending',
+      payment_type: 'advance',
+      service_id: serviceId,
+      barber_id: barberId,
+      booking_date: bookingDate,
+      booking_time: bookingTime,
+      created_at: new Date().toISOString(),
+      payer_phone: customerPhone,
+    } as Record<string, unknown>;
+
+    let paymentRecord: Record<string, unknown> | null = null;
+    let paymentError: { message: string } | null = null;
+
+    const insertResult = await supabase
       .from('payments')
-      .insert({
-        id: paymentId,
-        provider: 'volzix',
-        user_id: userId,
-        order_id: orderId,
-        web_id: webId,
-        amount,
-        currency: 'PKR',
-        status: 'pending',
-        payment_type: 'advance',
-        service_id: serviceId,
-        barber_id: barberId,
-        booking_date: bookingDate,
-        booking_time: bookingTime,
-        created_at: new Date().toISOString(),
-        payer_phone: customerPhone,
-      })
+      .insert(paymentInsert)
       .select()
       .single();
+
+    paymentRecord = insertResult.data as Record<string, unknown> | null;
+    paymentError = insertResult.error;
+
+    if (paymentError && /payer_phone/i.test(paymentError.message || '')) {
+      console.warn('Payments table missing payer_phone column, retrying insert without payer_phone');
+      delete paymentInsert.payer_phone;
+
+      const retryResult = await supabase
+        .from('payments')
+        .insert(paymentInsert)
+        .select()
+        .single();
+
+      paymentRecord = retryResult.data as Record<string, unknown> | null;
+      paymentError = retryResult.error;
+    }
 
     if (paymentError || !paymentRecord) {
       console.error('Volzix payment database insert failed:', paymentError);

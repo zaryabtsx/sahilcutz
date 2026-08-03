@@ -128,6 +128,7 @@ create table if not exists payments (
   barber_id uuid references barbers(id),
   booking_date text,
   booking_time text,
+  payer_phone text,
   provider_response jsonb,
   webhook_payload jsonb,
   failure_reason text,
@@ -142,6 +143,8 @@ alter table public.payments
   add column if not exists web_id text;
 alter table public.payments
   add column if not exists flow_id text;
+alter table public.payments
+  add column if not exists payer_phone text;
 alter table public.payments
   add column if not exists provider_response jsonb;
 alter table public.payments

@@ -481,6 +481,22 @@ function BookingPageContent() {
     };
   };
 
+  async function parseJsonResponse<T = Record<string, unknown>>(response: Response): Promise<T> {
+    const text = await response.text();
+    if (!text) return {} as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch (error) {
+      console.error('Failed to parse JSON response:', {
+        url: response.url,
+        status: response.status,
+        statusText: response.statusText,
+        body: text.slice(0, 120),
+      });
+      throw new Error(`Server returned invalid JSON: ${text.slice(0, 200).replace(/\s+/g, ' ')}`);
+    }
+  }
+
   const completePaidBooking = useCallback(async (paymentId: string, snapshot: PendingBookingSnapshot, method: 'volzix' | 'bank_transfer' = 'volzix') => {
     if (!user) return;
     setError('');
@@ -592,23 +608,49 @@ function BookingPageContent() {
         }),
       });
 
+      const paymentText = await paymentRes.text();
+      let paymentPayload: Record<string, unknown> = {};
+
+      try {
+        paymentPayload = paymentText ? JSON.parse(paymentText) : {};
+      } catch (parseError) {
+        console.error('Invalid JSON returned from payment initiation:', {
+          url: paymentRes.url,
+          status: paymentRes.status,
+          statusText: paymentRes.statusText,
+          body: paymentText.slice(0, 120),
+          parseError,
+        });
+      }
+
       if (!paymentRes.ok) {
-        const payload = await paymentRes.json().catch(() => ({}));
         console.error('Volzix payment initiation failed:', {
           status: paymentRes.status,
           statusText: paymentRes.statusText,
-          payload,
+          body: paymentText,
+          payload: paymentPayload,
         });
-        throw new Error(payload.error || 'Unable to start payment. Please try again.');
+
+        const message = typeof paymentPayload.error === 'string'
+          ? paymentPayload.error
+          : paymentText
+            ? `Unable to start payment. Server returned: ${paymentText.slice(0, 200).replace(/\s+/g, ' ')}`
+            : 'Unable to start payment. Please try again.';
+
+        throw new Error(message);
       }
 
-      const paymentPayload = await paymentRes.json();
-      if (!paymentPayload.paymentUrl) {
-        console.error('Volzix payment initiation returned no paymentUrl:', paymentPayload);
+      if (!paymentPayload || typeof paymentPayload.paymentUrl !== 'string') {
+        console.error('Volzix payment initiation returned no paymentUrl:', {
+          status: paymentRes.status,
+          statusText: paymentRes.statusText,
+          body: paymentText,
+          payload: paymentPayload,
+        });
         throw new Error('No payment link was returned by Volzix. Please try again.');
       }
 
-      window.location.href = paymentPayload.paymentUrl;
+      window.location.href = paymentPayload.paymentUrl as string;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unable to submit booking. Please try again.');
       setSubmitting(false);

@@ -71,6 +71,22 @@ export function PaymentStep({
     }
   }, [searchParams, onPaymentFailed]);
 
+  async function parseJsonResponse<T = Record<string, unknown>>(response: Response): Promise<T> {
+    const text = await response.text();
+    if (!text) return {} as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch (error) {
+      console.error('Failed to parse JSON response:', {
+        url: response.url,
+        status: response.status,
+        statusText: response.statusText,
+        body: text.slice(0, 120),
+      });
+      throw new Error(`Server returned invalid JSON: ${text.slice(0, 200).replace(/\s+/g, ' ')}`);
+    }
+  }
+
   const handlePayment = async () => {
     setIsProcessing(true);
     setError('');
@@ -95,13 +111,13 @@ export function PaymentStep({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to initiate payment');
+        const errorData = await parseJsonResponse<Record<string, unknown>>(response).catch(() => ({}));
+        throw new Error(errorData.error as string || 'Failed to initiate payment');
       }
 
-      const data = await response.json();
+      const data = await parseJsonResponse<Record<string, unknown>>(response);
 
-      if (!data.paymentUrl) {
+      if (!data.paymentUrl || typeof data.paymentUrl !== 'string') {
         throw new Error('No payment URL received from gateway');
       }
 
@@ -115,7 +131,7 @@ export function PaymentStep({
 
       // Small delay before redirect
       setTimeout(() => {
-        window.location.href = data.paymentUrl;
+        window.location.href = data.paymentUrl as string;
       }, 500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Payment initiation failed';
