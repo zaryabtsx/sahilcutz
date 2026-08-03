@@ -135,11 +135,27 @@ export function formatAmountForSignature(amount: number | string) {
   return Number(amount).toFixed(2);
 }
 
+function getCreatePaymentSignature(
+  merchantMid: string,
+  amount: string,
+  currency: string,
+  webId: string,
+  payerEmail: string,
+  timestamp: number,
+  alternateOrder = false,
+) {
+  const fields = alternateOrder
+    ? [merchantMid, amount, currency, payerEmail, webId, String(timestamp)]
+    : [merchantMid, amount, currency, webId, payerEmail, String(timestamp)];
+
+  return signRequest(fields);
+}
+
 export function signRequest(fields: string[]): string {
   const { merchantApiKey } = getVolzixConfig();
   return crypto
     .createHmac('sha256', merchantApiKey)
-    .update(fields.join('|'))
+    .update(fields.join('|'), 'utf8')
     .digest('hex');
 }
 
@@ -166,7 +182,10 @@ async function postVolzix(path: string, body: Record<string, unknown>, label: st
     console.error(`${label} failed:`, {
       status: response.status,
       statusText: response.statusText,
-      body: data,
+      contentType: response.headers.get('content-type'),
+      requestBody: body,
+      responseBody: data,
+      rawResponse: text.slice(0, 1000),
     });
 
     const message =
@@ -183,6 +202,12 @@ async function postVolzix(path: string, body: Record<string, unknown>, label: st
   return data;
 }
 
+function isSignatureError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes('signature') || message.includes('invalid signature') || message.includes('unauthorized');
+}
+
 export async function createPayment({
   amount,
   payerEmail,
@@ -194,31 +219,48 @@ export async function createPayment({
   const timestamp = Math.floor(Date.now() / 1000);
   const currency = 'PKR';
   const amountForSignature = formatAmountForSignature(amount);
-  const signature = signRequest([
-    merchantMid,
-    amountForSignature,
-    currency,
-    webId,
-    payerEmail,
-    String(timestamp),
-  ]);
+  const requestedAmount = Number(amountForSignature);
 
-  const requestBody: Record<string, unknown> = {
-    merchant_mid: merchantMid,
-    amount: Number(amountForSignature),
-    currency,
-    payer_email: payerEmail,
-    web_id: webId,
-    return: returnUrl,
-    timestamp,
-    signature,
+  const buildRequestBody = (alternateOrder = false) => {
+    const signature = getCreatePaymentSignature(
+      merchantMid,
+      amountForSignature,
+      currency,
+      webId,
+      payerEmail,
+      timestamp,
+      alternateOrder,
+    );
+
+    const requestBody: Record<string, unknown> = {
+      merchant_mid: merchantMid,
+      amount: requestedAmount,
+      currency,
+      payer_email: payerEmail,
+      web_id: webId,
+      return: returnUrl,
+      timestamp,
+      signature,
+    };
+
+    if (payerPhone && typeof payerPhone === 'string' && payerPhone.trim()) {
+      requestBody.payer_phone = payerPhone.trim();
+    }
+
+    return requestBody;
   };
 
-  if (payerPhone && typeof payerPhone === 'string' && payerPhone.trim()) {
-    requestBody.payer_phone = payerPhone.trim();
+  let data;
+  try {
+    data = await postVolzix('/auth/', buildRequestBody(false), 'Volzix create payment');
+  } catch (error) {
+    if (isSignatureError(error)) {
+      console.warn('Volzix create payment signature failed, retrying with alternate signature order.');
+      data = await postVolzix('/auth/', buildRequestBody(true), 'Volzix create payment');
+    } else {
+      throw error;
+    }
   }
-
-  const data = await postVolzix('/auth/', requestBody, 'Volzix create payment');
 
   const flowId = getString(data.flow_id);
   const paymentUrl = getString(data.payment_url);

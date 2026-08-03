@@ -124,38 +124,33 @@ export async function POST(request: NextRequest) {
       barber_id: barberId,
       booking_date: bookingDate,
       booking_time: bookingTime,
+      payer_phone: customerPhone.trim() || null,
       created_at: new Date().toISOString(),
-      payer_phone: customerPhone,
     } as Record<string, unknown>;
 
-    let paymentRecord: Record<string, unknown> | null = null;
-    let paymentError: { message: string } | null = null;
-
-    const insertResult = await supabase
+    let insertResult = await supabase
       .from('payments')
       .insert(paymentInsert)
       .select()
       .single();
 
-    paymentRecord = insertResult.data as Record<string, unknown> | null;
-    paymentError = insertResult.error;
-
-    if (paymentError && /payer_phone/i.test(paymentError.message || '')) {
-      console.warn('Payments table missing payer_phone column, retrying insert without payer_phone');
-      delete paymentInsert.payer_phone;
-
-      const retryResult = await supabase
+    if (insertResult.error && String(insertResult.error.message).toLowerCase().includes('payer_phone')) {
+      console.warn('payments.payer_phone column is missing, retrying insert without payer_phone');
+      delete (paymentInsert as any).payer_phone;
+      insertResult = await supabase
         .from('payments')
         .insert(paymentInsert)
         .select()
         .single();
-
-      paymentRecord = retryResult.data as Record<string, unknown> | null;
-      paymentError = retryResult.error;
     }
 
+    const paymentRecord = insertResult.data as Record<string, unknown> | null;
+    const paymentError = insertResult.error;
+
     if (paymentError || !paymentRecord) {
-      console.error('Volzix payment database insert failed:', paymentError);
+      console.error('Volzix payment database insert failed:', paymentError, {
+        payload: paymentInsert,
+      });
       return NextResponse.json(
         {
           error: 'Failed to create payment record',
