@@ -593,25 +593,32 @@ function BookingPageContent() {
     setSubmitting(true);
 
     try {
+      const normalizedPhone = normalizePhoneForVolzix(snapshot.customerPhone);
+      const paymentPayload = {
+        userId: user.id,
+        customerEmail: user.email,
+        customerName: user.full_name || user.email || 'Customer',
+        customerPhone: normalizedPhone || snapshot.customerPhone,
+        serviceId: primaryService.id,
+        barberId: snapshot.selectedSlot.barber_id,
+        bookingDate: snapshot.selectedDate,
+        bookingTime: snapshot.selectedSlot.start_time,
+        amount: getAdvancePaymentAmount(snapshot.selectedPrice),
+        paymentMethod,
+        returnPath: '/booking/payment-status',
+      };
+
+      console.log('Submitting Volzix payment', {
+        snapshot,
+        paymentPayload,
+      });
+
       sessionStorage.setItem(PENDING_BOOKING_PAYMENT_KEY, JSON.stringify(snapshot));
 
-      const normalizedPhone = normalizePhoneForVolzix(snapshot.customerPhone);
       const paymentRes = await fetch('/api/payment/volzix/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          customerEmail: user.email,
-          customerName: user.full_name || user.email || 'Customer',
-          customerPhone: normalizedPhone || snapshot.customerPhone,
-          serviceId: primaryService.id,
-          barberId: snapshot.selectedSlot.barber_id,
-          bookingDate: snapshot.selectedDate,
-          bookingTime: snapshot.selectedSlot.start_time,
-          amount: getAdvancePaymentAmount(snapshot.selectedPrice),
-          paymentMethod,
-          returnPath: '/booking/payment-status',
-        }),
+        body: JSON.stringify(paymentPayload),
       });
 
       const paymentText = await paymentRes.text();
@@ -628,6 +635,14 @@ function BookingPageContent() {
           parseError,
         });
       }
+
+      console.log('Volzix payment initiation response', {
+        ok: paymentRes.ok,
+        status: paymentRes.status,
+        statusText: paymentRes.statusText,
+        paymentText,
+        paymentPayload,
+      });
 
       if (!paymentRes.ok) {
         console.error('Volzix payment initiation failed:', {

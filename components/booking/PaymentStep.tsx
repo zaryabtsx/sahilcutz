@@ -92,26 +92,35 @@ export function PaymentStep({
     setError('');
 
     try {
+      const requestBody = {
+        userId,
+        customerEmail,
+        customerName,
+        customerPhone,
+        serviceId,
+        barberId,
+        bookingDate,
+        bookingTime,
+        amount: advanceAmount,
+      };
+
+      console.log('PaymentStep initiating Volzix payment', requestBody);
+
       const response = await fetch('/api/payment/volzix/initiate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          userId,
-          customerEmail,
-          customerName,
-          customerPhone,
-          serviceId,
-          barberId,
-          bookingDate,
-          bookingTime,
-          amount: advanceAmount,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
         const errorData = await parseJsonResponse<Record<string, unknown>>(response).catch(() => ({} as Record<string, unknown>));
+        console.error('PaymentStep Volzix payment initiation failed', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+        });
         const errorMessage = typeof errorData.error === 'string'
           ? errorData.error
           : 'Failed to initiate payment';
@@ -119,6 +128,7 @@ export function PaymentStep({
       }
 
       const data = await parseJsonResponse<Record<string, unknown>>(response);
+      console.log('PaymentStep Volzix initiation response', data);
 
       if (!data.paymentUrl || typeof data.paymentUrl !== 'string') {
         throw new Error('No payment URL received from gateway');
