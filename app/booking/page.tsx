@@ -622,10 +622,10 @@ function BookingPageContent() {
       });
 
       const paymentText = await paymentRes.text();
-      let paymentPayload: Record<string, unknown> = {};
+      let paymentResponsePayload: Record<string, unknown> = {};
 
       try {
-        paymentPayload = paymentText ? JSON.parse(paymentText) : {};
+        paymentResponsePayload = paymentText ? JSON.parse(paymentText) : {};
       } catch (parseError) {
         console.error('Invalid JSON returned from payment initiation:', {
           url: paymentRes.url,
@@ -641,7 +641,7 @@ function BookingPageContent() {
         status: paymentRes.status,
         statusText: paymentRes.statusText,
         paymentText,
-        paymentPayload,
+        paymentResponsePayload,
       });
 
       if (!paymentRes.ok) {
@@ -649,11 +649,11 @@ function BookingPageContent() {
           status: paymentRes.status,
           statusText: paymentRes.statusText,
           body: paymentText,
-          payload: paymentPayload,
+          payload: paymentResponsePayload,
         });
 
-        const message = typeof paymentPayload.error === 'string'
-          ? paymentPayload.error
+        const message = typeof paymentResponsePayload.error === 'string'
+          ? paymentResponsePayload.error
           : paymentText
             ? `Unable to start payment. Server returned: ${paymentText.slice(0, 200).replace(/\s+/g, ' ')}`
             : 'Unable to start payment. Please try again.';
@@ -661,17 +661,17 @@ function BookingPageContent() {
         throw new Error(message);
       }
 
-      if (!paymentPayload || typeof paymentPayload.paymentUrl !== 'string') {
+      if (!paymentResponsePayload || typeof paymentResponsePayload.paymentUrl !== 'string') {
         console.error('Volzix payment initiation returned no paymentUrl:', {
           status: paymentRes.status,
           statusText: paymentRes.statusText,
           body: paymentText,
-          payload: paymentPayload,
+          payload: paymentResponsePayload,
         });
         throw new Error('No payment link was returned by Volzix. Please try again.');
       }
 
-      window.location.href = paymentPayload.paymentUrl as string;
+      window.location.href = paymentResponsePayload.paymentUrl as string;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unable to submit booking. Please try again.');
       setSubmitting(false);
