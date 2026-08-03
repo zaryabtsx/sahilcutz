@@ -128,6 +128,25 @@ export default function CustomerDashboardPage() {
     void loadAppointments();
   }, [ready, user]);
 
+  useEffect(() => {
+    if (!ready || !user) return;
+
+    const handleFocus = () => {
+      void loadAppointments();
+    };
+
+    const interval = window.setInterval(() => {
+      void loadAppointments();
+    }, 10000);
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.clearInterval(interval);
+    };
+  }, [ready, user]);
+
   const handleLogout = async () => {
     clearSession();
     await supabase.auth.signOut();

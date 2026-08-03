@@ -43,7 +43,7 @@ function PaymentStatusContent() {
   const status = normalizeStatus(data?.payment?.status);
   const isSuccess = ['completed', 'success', 'paid'].includes(status);
   const isFailed = ['failed', 'declined', 'cancelled', 'canceled'].includes(status);
-  const shouldPoll = Boolean(paymentId || orderId || bookingId || webId || flowId) && !isSuccess && !isFailed;
+  const shouldPoll = Boolean(paymentId || orderId || bookingId || webId || flowId) && !isFailed && (!isSuccess || !data?.appointment);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();

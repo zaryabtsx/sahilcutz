@@ -211,7 +211,7 @@ export async function ensureAppointmentForPaidPayment(supabase: ServerClient, pa
       start_at: startAt.toISOString(),
       end_at: endAt.toISOString(),
       duration_minutes: duration,
-      status: (String(payment.status || '').toLowerCase().includes('complete') || String(payment.status || '').toLowerCase().includes('paid')) ? 'Completed' : 'Upcoming',
+      status: 'Upcoming',
       is_emergency: false,
       payment_id: payment.id,
     })
