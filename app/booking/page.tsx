@@ -594,11 +594,17 @@ function BookingPageContent() {
 
       if (!paymentRes.ok) {
         const payload = await paymentRes.json().catch(() => ({}));
+        console.error('Volzix payment initiation failed:', {
+          status: paymentRes.status,
+          statusText: paymentRes.statusText,
+          payload,
+        });
         throw new Error(payload.error || 'Unable to start payment. Please try again.');
       }
 
       const paymentPayload = await paymentRes.json();
       if (!paymentPayload.paymentUrl) {
+        console.error('Volzix payment initiation returned no paymentUrl:', paymentPayload);
         throw new Error('No payment link was returned by Volzix. Please try again.');
       }
 
@@ -1244,6 +1250,7 @@ function BookingPageContent() {
                       </span>
                     </button>
                     <button
+                      type="button"
                       onClick={submitBooking}
                       disabled={submitting}
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all"

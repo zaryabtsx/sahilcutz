@@ -183,6 +183,7 @@ export async function POST(request: NextRequest) {
         createResult = await createPayment({
           amount,
           payerEmail: customerEmail,
+          payerPhone: customerPhone,
           webId,
           returnUrl: returnUrl.toString(),
         });

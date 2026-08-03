@@ -339,6 +339,7 @@ export function PaymentStep({
           className="space-y-4"
         >
           <motion.button
+            type="button"
             whileHover={{ scale: isProcessing || loading || paymentInitiated ? 1 : 1.02 }}
             whileTap={{ scale: isProcessing || loading || paymentInitiated ? 1 : 0.98 }}
             onClick={handlePayment}
