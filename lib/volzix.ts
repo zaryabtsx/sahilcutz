@@ -3,6 +3,7 @@ import crypto from 'crypto';
 export interface CreatePaymentInput {
   amount: number;
   payerEmail: string;
+  payerPhone?: string;
   webId: string;
   returnUrl: string;
 }
@@ -185,6 +186,7 @@ async function postVolzix(path: string, body: Record<string, unknown>, label: st
 export async function createPayment({
   amount,
   payerEmail,
+  payerPhone,
   webId,
   returnUrl,
 }: CreatePaymentInput): Promise<CreatePaymentResult> {
@@ -201,7 +203,7 @@ export async function createPayment({
     String(timestamp),
   ]);
 
-  const data = await postVolzix('/auth/', {
+  const requestBody: Record<string, unknown> = {
     merchant_mid: merchantMid,
     amount: Number(amountForSignature),
     currency,
@@ -210,7 +212,13 @@ export async function createPayment({
     return: returnUrl,
     timestamp,
     signature,
-  }, 'Volzix create payment');
+  };
+
+  if (payerPhone && typeof payerPhone === 'string' && payerPhone.trim()) {
+    requestBody.payer_phone = payerPhone.trim();
+  }
+
+  const data = await postVolzix('/auth/', requestBody, 'Volzix create payment');
 
   const flowId = getString(data.flow_id);
   const paymentUrl = getString(data.payment_url);

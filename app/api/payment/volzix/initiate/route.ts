@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
         booking_date: bookingDate,
         booking_time: bookingTime,
         created_at: new Date().toISOString(),
+        payer_phone: customerPhone,
       })
       .select()
       .single();
@@ -147,6 +148,7 @@ export async function POST(request: NextRequest) {
       createResult = await createPayment({
         amount,
         payerEmail: customerEmail,
+        payerPhone: customerPhone,
         webId,
         returnUrl: returnUrl.toString(),
       });
