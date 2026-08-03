@@ -32,7 +32,7 @@ function ack(flowId: string, status: string) {
   return NextResponse.json({ flow_id: flowId, status });
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const payload = await request.json().catch(() => null);
 
