@@ -135,6 +135,25 @@ export function formatAmountForSignature(amount: number | string) {
   return Number(amount).toFixed(2);
 }
 
+export function normalizePhoneForVolzix(phone: unknown): string | undefined {
+  const raw = typeof phone === 'string' ? phone.trim() : '';
+  if (!raw) return undefined;
+
+  let normalized = raw.replace(/[^\d+]/g, '');
+  if (normalized.startsWith('00')) {
+    normalized = `+${normalized.slice(2)}`;
+  }
+  if (/^0\d{10}$/.test(normalized)) {
+    normalized = `+92${normalized.slice(1)}`;
+  }
+  if (/^92\d{10}$/.test(normalized)) {
+    normalized = `+${normalized}`;
+  }
+  if (/^\d{10,15}$/.test(normalized) && !normalized.startsWith('+')) {
+    normalized = `+${normalized}`;
+  }
+  return normalized;
+}
 function getCreatePaymentSignature(
   merchantMid: string,
   amount: string,
@@ -232,7 +251,7 @@ export async function createPayment({
       alternateOrder,
     );
 
-    const requestBody: Record<string, unknown> = {
+      const requestBody: Record<string, unknown> = {
       merchant_mid: merchantMid,
       amount: requestedAmount,
       currency,
@@ -243,8 +262,9 @@ export async function createPayment({
       signature,
     };
 
-    if (payerPhone && typeof payerPhone === 'string' && payerPhone.trim()) {
-      requestBody.payer_phone = payerPhone.trim();
+    const normalizedPhone = normalizePhoneForVolzix(payerPhone);
+    if (normalizedPhone) {
+      requestBody.payer_phone = normalizedPhone;
     }
 
     return requestBody;

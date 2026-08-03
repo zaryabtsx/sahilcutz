@@ -464,6 +464,27 @@ function BookingPageContent() {
     );
   };
 
+  const normalizePhoneForVolzix = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    let normalized = raw.replace(/[^\d+]/g, '');
+    normalized = normalized.replace(/^\+0+/, '+');
+    if (normalized.startsWith('00')) {
+      normalized = `+${normalized.slice(2)}`;
+    }
+    if (/^0\d{10}$/.test(normalized)) {
+      normalized = `+92${normalized.slice(1)}`;
+    }
+    if (/^92\d{10}$/.test(normalized)) {
+      normalized = `+${normalized}`;
+    }
+    if (/^\d{10,15}$/.test(normalized) && !normalized.startsWith('+')) {
+      normalized = `+${normalized}`;
+    }
+    return normalized;
+  };
+
   const buildPaymentSnapshot = (): PendingBookingSnapshot | null => {
     if (!selectedServices.length || !selectedSlot) return null;
 
@@ -480,22 +501,6 @@ function BookingPageContent() {
       paymentMethod,
     };
   };
-
-  async function parseJsonResponse<T = Record<string, unknown>>(response: Response): Promise<T> {
-    const text = await response.text();
-    if (!text) return {} as T;
-    try {
-      return JSON.parse(text) as T;
-    } catch (error) {
-      console.error('Failed to parse JSON response:', {
-        url: response.url,
-        status: response.status,
-        statusText: response.statusText,
-        body: text.slice(0, 120),
-      });
-      throw new Error(`Server returned invalid JSON: ${text.slice(0, 200).replace(/\s+/g, ' ')}`);
-    }
-  }
 
   const completePaidBooking = useCallback(async (paymentId: string, snapshot: PendingBookingSnapshot, method: 'volzix' | 'bank_transfer' = 'volzix') => {
     if (!user) return;
@@ -590,6 +595,7 @@ function BookingPageContent() {
     try {
       sessionStorage.setItem(PENDING_BOOKING_PAYMENT_KEY, JSON.stringify(snapshot));
 
+      const normalizedPhone = normalizePhoneForVolzix(snapshot.customerPhone);
       const paymentRes = await fetch('/api/payment/volzix/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -597,7 +603,7 @@ function BookingPageContent() {
           userId: user.id,
           customerEmail: user.email,
           customerName: user.full_name || user.email || 'Customer',
-          customerPhone: snapshot.customerPhone,
+          customerPhone: normalizedPhone || snapshot.customerPhone,
           serviceId: primaryService.id,
           barberId: snapshot.selectedSlot.barber_id,
           bookingDate: snapshot.selectedDate,
@@ -734,7 +740,7 @@ function BookingPageContent() {
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full rounded-[32px] border border-border bg-card/90 p-10 text-center shadow-2xl backdrop-blur-xl"
+        className="max-w-md w-full rounded-4xl border border-border bg-card/90 p-10 text-center shadow-2xl backdrop-blur-xl"
       >
         <div className="mx-auto mb-6 inline-flex h-20 w-20 items-center justify-center rounded-full bg-primary/15">
           <CheckCircle className="w-10 h-10 text-primary" />
@@ -790,7 +796,7 @@ function BookingPageContent() {
         <div className="mt-8 flex flex-col gap-3">
           <button
             onClick={() => router.push('/customer/dashboard')}
-            className="w-full rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20"
+            className="w-full rounded-3xl bg-linear-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20"
           >
             Go to dashboard
           </button>
@@ -952,7 +958,7 @@ function BookingPageContent() {
                     <button
                       onClick={() => selectedServices.length && setStep(1)}
                       disabled={!selectedServices.length}
-                      className="inline-flex items-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40 transition-all"
+                      className="inline-flex items-center gap-2 rounded-3xl bg-linear-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40 transition-all"
                     >
                       Continue <ArrowRight className="w-4 h-4" />
                     </button>
@@ -1151,7 +1157,7 @@ function BookingPageContent() {
                   <button
                     onClick={() => selectedSlot && setStep(2)}
                     disabled={!selectedSlot}
-                    className="inline-flex items-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40 transition-all"
+                    className="inline-flex items-center gap-2 rounded-3xl bg-linear-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40 transition-all"
                   >
                     Continue <ArrowRight className="w-4 h-4" />
                   </button>
@@ -1295,7 +1301,7 @@ function BookingPageContent() {
                       type="button"
                       onClick={submitBooking}
                       disabled={submitting}
-                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all"
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-3xl bg-linear-to-r from-primary to-accent px-6 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-60 transition-all"
                     >
                       {submitting
                           ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting secure payment…</>
