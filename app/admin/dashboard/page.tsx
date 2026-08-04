@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { supabase } from '@/lib/supabase';
 import { useEffect, useMemo, useState } from 'react';
-import { getAdminToken } from '@/lib/auth';
+import { getAdminToken, setAdminToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -353,6 +353,9 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const session = getSession();
     const isAdmin = session?.user.role === 'admin' || getAdminToken() === 'admin_verified';
+    if (session?.user.role === 'admin') {
+      setAdminToken('admin_verified');
+    }
     if (!isAdmin) {
       router.push('/admin/login');
       return;
@@ -392,7 +395,10 @@ export default function AdminDashboardPage() {
         const profileName = user?.full_name || user?.name || storedCustomer.name || a.customer_name || a.customer_email || a.email || 'Unknown User';
         const profilePhone = user?.phone || a.customer_phone || storedCustomer.phone || a.phone || null;
         const appointmentDate = getDisplayDate(a.appointment_date || a.date || a.start_at, startDate);
-        const appointmentTime = getDisplayTime(a.appointment_time || a.time, startDate);
+        const appointmentTime = getDisplayTime(
+          a.appointment_time || a.time || (typeof a.start_at === 'string' ? a.start_at.slice(11, 16) : undefined),
+          startDate,
+        );
 
         return {
           id: a.id,

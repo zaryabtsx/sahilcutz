@@ -225,24 +225,28 @@ export async function signIn(
 
     await syncProfileFromAuth(profile);
     setSession({ user: profile, token: response.data.session.access_token });
+    if (role === 'admin') {
+      setAdminToken('admin_verified');
+    }
     return { success: true, message: 'Signed in', role };
   }
 
   // 2. Hardcoded admin path (no Supabase config)
- // Inside signIn function, in the hardcoded admin block:
-if (validateAdminCredentials(email, password)) {
-  // ... existing code ...
-
-  // ADD THIS:
-  if (hasSupabaseConfig()) {
-    await supabase.auth.signInWithPassword({
-      email: ADMIN_CREDENTIALS.email,
-      password: ADMIN_CREDENTIALS.password,
-    });
+  if (validateAdminCredentials(email, password)) {
+    const profile: UserProfile = {
+      id: 'admin-1',
+      email,
+      phone: null,
+      role: 'admin',
+      full_name: ADMIN_CREDENTIALS.fullName,
+      favorite_barber_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setSession({ user: profile, token: 'admin-session' });
+    setAdminToken('admin_verified');
+    return { success: true, message: 'Signed in', role: 'admin' };
   }
-
-  // rest of your code...
-}
 
   // 3. Demo customer path (dev / no Supabase config)
   if (email.endsWith('@example.com') && password.length >= 6) {
