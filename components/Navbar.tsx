@@ -217,7 +217,7 @@ export function Navbar() {
                         Login
                       </motion.button>
                     </Link>
-                    <Link href="/booking-new">
+                    <Link href="/customer/dashboard">
                       <motion.button
                         whileHover={{ scale: 1.04 }}
                         whileTap={{ scale: 0.96 }}
