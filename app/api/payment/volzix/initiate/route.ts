@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     statusUrl.searchParams.set('webId', webId);
 
     const returnUrl = new URL('/api/payment/volzix/return', appUrl);
-    returnUrl.searchParams.set('returnPath', statusUrl.pathname);
+    returnUrl.searchParams.set('returnPath', `${statusUrl.pathname}${statusUrl.search}`);
     returnUrl.searchParams.set('bookingId', bookingReference);
     returnUrl.searchParams.set('orderId', orderId);
     returnUrl.searchParams.set('paymentId', paymentId);

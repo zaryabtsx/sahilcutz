@@ -1,14 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveAppUrl } from '@/lib/appUrl';
 
-function safePath(value: string | null, fallback = '/booking/payment-status') {
-  return value && value.startsWith('/') && !value.startsWith('//') ? value : fallback;
+function safePath(value: string | null, appUrl: string, fallback = '/booking/payment-status') {
+  if (!value) return fallback;
+
+  const decoded = value.trim();
+  if (decoded.startsWith('/') && !decoded.startsWith('//')) {
+    return decoded;
+  }
+
+  try {
+    const url = new URL(decoded);
+    const origin = new URL(appUrl).origin;
+    if (url.origin === origin) {
+      return `${url.pathname}${url.search}`;
+    }
+  } catch {
+    // Ignore invalid absolute URLs and fall through to fallback.
+  }
+
+  return fallback;
 }
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const appUrl = resolveAppUrl(request);
-  const returnPath = safePath(params.get('returnPath'));
+  const returnPath = safePath(params.get('returnPath'), appUrl);
   const redirectUrl = new URL(returnPath, appUrl);
 
   const forwardingMap: Record<string, string> = {
