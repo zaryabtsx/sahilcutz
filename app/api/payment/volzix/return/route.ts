@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveAppUrl } from '@/lib/appUrl';
 
 function safePath(value: string | null, fallback = '/booking/payment-status') {
   return value && value.startsWith('/') && !value.startsWith('//') ? value : fallback;
@@ -6,7 +7,7 @@ function safePath(value: string | null, fallback = '/booking/payment-status') {
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appUrl = resolveAppUrl(request);
   const returnPath = safePath(params.get('returnPath'));
   const redirectUrl = new URL(returnPath, appUrl);
 

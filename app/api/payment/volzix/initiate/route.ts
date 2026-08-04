@@ -8,6 +8,7 @@ import {
   MissingVolzixConfigError,
 } from '@/lib/volzix';
 import { getServerClient } from '@/lib/volzix-server';
+import { resolveAppUrl } from '@/lib/appUrl';
 
 function safePath(value: unknown, fallback = '/booking/payment-status') {
   return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     const amount = Number.isFinite(Number(providedAmount)) && Number(providedAmount) > 0
       ? Math.max(Number(providedAmount), requiredAdvance)
       : requiredAdvance;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = resolveAppUrl(request);
     const paymentId = crypto.randomUUID();
     const bookingReference = isNonEmptyString(bookingId) ? bookingId : orderId;
     let webId = generateWebId(bookingReference);
