@@ -10,18 +10,16 @@ export function normalizeAppUrl(value: string | undefined, fallback = 'http://lo
 function getHeader(headers: Headers | { get?: (name: string) => string | null; [key: string]: unknown } | undefined, name: string) {
   if (!headers) return undefined;
 
-  if (typeof headers.get === 'function') {
-    return headers.get(name) || undefined;
+  // Prefer the Headers-like API when available
+  if (headers && typeof (headers as Headers).get === 'function') {
+    return (headers as Headers).get(name) || undefined;
   }
 
-  if (typeof headers[name] === 'string') {
-    return headers[name];
-  }
-
-  if (Array.isArray(headers[name])) {
-    return headers[name][0];
-  }
-
+  // Fallback to an indexable object for environments that provide plain header maps
+  const indexable = headers as { [key: string]: unknown } | undefined;
+  const value = indexable ? indexable[name] : undefined;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.length && typeof value[0] === 'string') return value[0];
   return undefined;
 }
 
