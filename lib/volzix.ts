@@ -272,11 +272,46 @@ export async function createPayment({
 
   let data;
   try {
-    data = await postVolzix('/auth/', buildRequestBody(false), 'Volzix create payment');
+    const reqBody0 = buildRequestBody(false);
+    if (process.env.VOLZIX_DEBUG_LOG === 'true') {
+      try {
+        // Mask nothing sensitive here — merchantApiKey is not included in requestBody
+        console.info('Volzix create payment request (preview):', {
+          web_id: reqBody0.web_id,
+          amount: reqBody0.amount,
+          currency: reqBody0.currency,
+          payer_email: reqBody0.payer_email,
+          payer_phone: reqBody0.payer_phone,
+          return: reqBody0.return,
+          timestamp: reqBody0.timestamp,
+        });
+      } catch {
+        /* ignore logging errors */
+      }
+    }
+
+    data = await postVolx?ix('/auth/', reqBody0, 'Volzix create payment');
   } catch (error) {
     if (isSignatureError(error)) {
       console.warn('Volzix create payment signature failed, retrying with alternate signature order.');
-      data = await postVolzix('/auth/', buildRequestBody(true), 'Volzix create payment');
+      const reqBody1 = buildRequestBody(true);
+      if (process.env.VOLZIX_DEBUG_LOG === 'true') {
+        try {
+          console.info('Volzix create payment retry request (preview):', {
+            web_id: reqBody1.web_id,
+            amount: reqBody1.amount,
+            currency: reqBody1.currency,
+            payer_email: reqBody1.payer_email,
+            payer_phone: reqBody1.payer_phone,
+            return: reqBody1.return,
+            timestamp: reqBody1.timestamp,
+          });
+        } catch {
+          /* ignore logging errors */
+        }
+      }
+
+      data = await postVolzix('/auth/', reqBody1, 'Volzix create payment');
     } else {
       throw error;
     }

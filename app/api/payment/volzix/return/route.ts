@@ -45,8 +45,34 @@ export async function GET(request: NextRequest) {
     payment_status: 'paymentStatus',
   };
 
+  function normalizeStatus(raw?: string | null) {
+    if (!raw) return 'pending';
+    const v = String(raw).trim().toLowerCase();
+    const success = ['completed', 'success', 'paid', 'settled'];
+    const failed = ['expired', 'failed', 'cancelled', 'canceled', 'dropped', 'refunded', 'declined'];
+    if (success.includes(v)) return 'completed';
+    if (failed.includes(v)) return 'failed';
+    // Treat any other non-empty status as pending so the frontend continues polling
+    return 'pending';
+  }
+
+  // Collect all params first so we can map status specially
+  const rawParams: Record<string, string> = {};
   for (const [key, value] of params.entries()) {
     if (key === 'returnPath') continue;
+    rawParams[key] = value;
+  }
+
+  // Normalize and forward
+  for (const key of Object.keys(rawParams)) {
+    const value = rawParams[key];
+    if (key === 'status' || key === 'paymentStatus' || key === 'payment_status') {
+      redirectUrl.searchParams.set('paymentStatus', normalizeStatus(value));
+      // Also forward original raw status for debugging if present
+      redirectUrl.searchParams.set('rawPaymentStatus', value);
+      continue;
+    }
+
     const forwardedKey = forwardingMap[key] || key;
     redirectUrl.searchParams.set(forwardedKey, value);
   }
