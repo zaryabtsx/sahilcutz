@@ -1,4 +1,4 @@
-export function normalizeAppUrl(value: string | undefined, fallback = 'http://localhost:3000') {
+export function normalizeAppUrl(value: string | undefined, fallback = '') {
   if (typeof value !== 'string') return fallback;
 
   const trimmed = value.trim();
@@ -34,8 +34,14 @@ export function resolveAppUrl(request: { headers?: Headers | { get?: (name: stri
     return `${proto}://${host}`.replace(/\/+$/, '');
   }
 
-  return normalizeAppUrl(
+  const appUrl = normalizeAppUrl(
     env.NEXT_PUBLIC_APP_URL || env.APP_URL || env.NEXT_PUBLIC_SITE_URL,
-    'http://localhost:3000',
+    '',
   );
+
+  if (!appUrl) {
+    throw new Error('Missing application URL. Set NEXT_PUBLIC_APP_URL, APP_URL, or NEXT_PUBLIC_SITE_URL in the environment.');
+  }
+
+  return appUrl;
 }
