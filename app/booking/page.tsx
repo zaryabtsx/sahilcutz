@@ -205,10 +205,19 @@ function computeAvailableSlots(
 
   const blockedRanges = booked
     .filter(b => b.barber_id === barberId && !['Cancelled', 'cancelled'].includes(b.status))
-    .map(b => ({
-      from: timeToMins(timeFromTimestamp(b.start_at)),
-      to:   timeToMins(timeFromTimestamp(b.end_at)),
-    }));
+    .map(b => {
+      const startTime = b.appointment_time || b.start_at?.slice(11, 16) || '00:00';
+      const endTime = b.end_at?.slice(11, 16) || (() => {
+        const duration = Number(b.duration_minutes) || 30;
+        const startMins = timeToMins(startTime);
+        const endMins = startMins + duration;
+        return `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
+      })();
+      return {
+        from: timeToMins(startTime),
+        to: timeToMins(endTime),
+      };
+    });
 
   const nowMins =
     isoDate(new Date()) === selectedDate
@@ -391,14 +400,20 @@ function BookingPageContent() {
       supabase.from('slots').select('*').eq('slot_date', date).eq('is_available', true),
       supabase
         .from('appointments')
-        .select('barber_id, start_at, end_at, duration_minutes, status')
-        .gte('start_at', `${date}T00:00:00`)
-        .lt('start_at', `${date}T23:59:59`)
-        .not('status', 'in', '("Cancelled","cancelled")'),
+        .select('barber_id, start_at, end_at, duration_minutes, status, appointment_date, appointment_time')
+        .or(
+          `appointment_date.eq.${date},and(start_at.gte.${date}T00:00:00,start_at.lt.${date}T23:59:59),and(end_at.gte.${date}T00:00:00,end_at.lt.${date}T23:59:59)`
+        )
+        .not('status', 'in', '(Cancelled,cancelled)'),
     ]);
 
     setWindows((winRes.data ?? []) as AvailWindow[]);
-    setBooked((apptRes.data ?? []) as BookedAppt[]);
+    if (apptRes.error) {
+      console.warn('Failed to load booked appointments for date', date, apptRes.error.message);
+      setBooked([]);
+    } else {
+      setBooked((apptRes.data ?? []) as BookedAppt[]);
+    }
     setLoadingSlots(false);
   }, []);
 
@@ -535,6 +550,8 @@ function BookingPageContent() {
         end_at:           endAt,
         duration_minutes: bookedDuration,
         barber_id:        bookedSlot.barber_id,
+        appointment_date: bookedDate,
+        appointment_time: bookedSlot.start_time,
         is_emergency:     false,
         status:           'Upcoming',
         payment_id:       paymentId,

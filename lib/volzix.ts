@@ -290,7 +290,7 @@ export async function createPayment({
       }
     }
 
-    data = await postVolx?ix('/auth/', reqBody0, 'Volzix create payment');
+    data = await postVolzix('/auth/', reqBody0, 'Volzix create payment');
   } catch (error) {
     if (isSignatureError(error)) {
       console.warn('Volzix create payment signature failed, retrying with alternate signature order.');

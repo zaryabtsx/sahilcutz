@@ -104,7 +104,16 @@ const INPUT_CLS =
 
 // ── Helpers ───────────────────────────────────────────────────
 
-const fmtTime = (t: string) => t?.slice(0, 5) ?? '';
+const fmtTime = (t: string) => {
+  if (!t) return '';
+  const [hoursStr, minutesStr] = t.split(':');
+  const hours = Number(hoursStr);
+  const minutes = Number(minutesStr);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return t.slice(0, 5);
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+  const displayHour = hours % 12 || 12;
+  return `${displayHour}:${String(minutes).padStart(2, '0')} ${suffix}`;
+};
 const fmtDate = (d: string) => {
   return new Date(d + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' });
 };
@@ -526,7 +535,7 @@ export default function AdminDashboardPage() {
 
   const summaryAppointments = useMemo(() => {
     return appointments.filter(a => {
-      const apptDate = a.appointment_date || null;
+      const apptDate = a.appointment_date || ((a as any).start_at ? String((a as any).start_at).slice(0, 10) : null);
       if (!apptDate) return false;
       if (summaryMode === 'day') {
         if (!summaryDate) return false;
@@ -607,13 +616,22 @@ export default function AdminDashboardPage() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const today = localDateKey();
+    // By default show past and near-future appointments (next 30 days) so admin can see upcoming bookings
+    const futureCutoff = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      return d.toISOString().slice(0, 10);
+    })();
+
     return appointments.filter(a => {
       const status = appointmentDisplayStatus(a);
       if (statusFilter !== 'All' && status !== statusFilter) return false;
       if (dateFilter) {
         if (a.appointment_date !== dateFilter) return false;
-      } else if (a.appointment_date > today) {
-        return false;
+      } else {
+        // allow showing appointments from the past up to the near future (30 days ahead)
+        if (!a.appointment_date) return false;
+        if (a.appointment_date > futureCutoff) return false;
       }
       if (
         q &&

@@ -363,15 +363,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, shiftedAppointments: result.shiftedAppointments });
     }
 
+    // Prevent double-booking: ensure no overlapping appointment exists for the same barber
+    const requestedStart = new Date(String(appointmentPayload.start_at)).toISOString();
+    const requestedEnd = new Date(String(appointmentPayload.end_at)).toISOString();
+
+    const { data: conflicts, error: conflictError } = await supabase
+      .from('appointments')
+      .select('id,status,start_at,end_at')
+      .eq('barber_id', appointmentPayload.barber_id)
+      .neq('status', 'cancelled')
+      .lt('start_at', requestedEnd)
+      .gt('end_at', requestedStart);
+
+    if (conflictError) {
+      console.warn('Could not check appointment conflicts:', conflictError.message);
+    } else if (Array.isArray(conflicts) && conflicts.length > 0) {
+      return NextResponse.json({ error: 'Selected time slot is no longer available' }, { status: 409 });
+    }
+
     // Remove fields not present on the appointments table (avoid schema cache errors)
     if ('payment_method' in appointmentPayload) {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (appointmentPayload as any).payment_method;
     }
 
+    const payloadWithDate = { ...appointmentPayload };
+    if (!payloadWithDate.appointment_date && payloadWithDate.start_at) {
+      payloadWithDate.appointment_date = String(payloadWithDate.start_at).slice(0, 10);
+    }
+    if (!payloadWithDate.appointment_time && payloadWithDate.start_at) {
+      payloadWithDate.appointment_time = String(payloadWithDate.start_at).slice(11, 16);
+    }
+
     const { data, error } = await supabase
       .from('appointments')
-      .insert([appointmentPayload])
+      .insert([payloadWithDate])
       .select()
       .single();
 
