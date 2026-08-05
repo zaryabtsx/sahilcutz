@@ -63,6 +63,8 @@ interface Barber {
 
 interface BookedAppt {
   barber_id: string;
+  appointment_date?: string;
+  appointment_time?: string;
   start_at: string;
   end_at: string;
   duration_minutes: number;
