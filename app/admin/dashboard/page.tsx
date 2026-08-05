@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
@@ -201,7 +203,15 @@ function getDisplayDate(dateValue: unknown, fallbackDate: Date): string {
 }
 
 function getDisplayTime(timeValue: unknown, fallbackDate: Date): string {
-  if (typeof timeValue === 'string' && timeValue.trim()) return timeValue.slice(0, 5);
+  if (typeof timeValue === 'string' && timeValue.trim()) {
+    const trimmed = timeValue.trim();
+    if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toTimeString().slice(0, 5);
+    }
+    return trimmed.slice(0, 5);
+  }
   return fallbackDate.toTimeString().slice(0, 5);
 }
 

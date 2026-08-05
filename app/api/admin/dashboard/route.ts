@@ -94,8 +94,27 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const appointmentRows = (appointmentsResult.data ?? []) as Array<Record<string, unknown>>;
+    const normalizedAppointments = appointmentRows.map((appt) => {
+      const appointmentDate =
+        typeof appt.appointment_date === 'string' ? appt.appointment_date :
+        typeof appt.start_at === 'string' ? appt.start_at.slice(0, 10) :
+        typeof appt.end_at === 'string' ? appt.end_at.slice(0, 10) :
+        null;
+      const appointmentTime =
+        typeof appt.appointment_time === 'string' ? appt.appointment_time :
+        typeof appt.start_at === 'string' ? appt.start_at.slice(11, 16) :
+        typeof appt.end_at === 'string' ? appt.end_at.slice(11, 16) :
+        null;
+      return {
+        ...appt,
+        appointment_date: appointmentDate,
+        appointment_time: appointmentTime,
+      };
+    });
+
     return NextResponse.json({
-      appointments: appointmentsResult.data ?? [],
+      appointments: normalizedAppointments,
       payments: paymentsResult.data ?? [],
       barbers: barbersResult.data ?? [],
       users: Array.from(mergedUsers.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),

@@ -66,11 +66,17 @@ export async function GET(request: NextRequest) {
     const servicesById = new Map((servicesRes.data ?? []).map((service) => [service.id, service]));
     const barbersById = new Map((barbersRes.data ?? []).map((barber) => [barber.id, barber]));
 
-    const rows = (appointments ?? []).map((appointment) => ({
-      ...appointment,
-      services: appointment.service_id ? servicesById.get(appointment.service_id) ?? null : null,
-      barbers: appointment.barber_id ? barbersById.get(appointment.barber_id) ?? null : null,
-    }));
+    const rows = (appointments ?? []).map((appointment) => {
+      const appointmentDate = appointment.appointment_date || (typeof appointment.start_at === 'string' ? appointment.start_at.slice(0, 10) : null);
+      const appointmentTime = appointment.appointment_time || (typeof appointment.start_at === 'string' ? appointment.start_at.slice(11, 16) : null);
+      return {
+        ...appointment,
+        appointment_date: appointmentDate,
+        appointment_time: appointmentTime,
+        services: appointment.service_id ? servicesById.get(appointment.service_id) ?? null : null,
+        barbers: appointment.barber_id ? barbersById.get(appointment.barber_id) ?? null : null,
+      };
+    });
 
     return NextResponse.json(rows);
   } catch (error) {

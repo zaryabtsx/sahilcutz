@@ -257,20 +257,24 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
       const startDate = new Date(year, month - 1, day, hour, minute, 0);
       const endDate = new Date(startDate.getTime() + service.duration_minutes * 60000);
 
+      const appointmentPayload = {
+        user_id: session.user.id,
+        barber_id: dataToUse.barberId,
+        service_id: dataToUse.serviceId,
+        start_at: startDate.toISOString(),
+        end_at: endDate.toISOString(),
+        duration_minutes: service.duration_minutes,
+        appointment_date: dataToUse.date,
+        appointment_time: dataToUse.time,
+        notes: dataToUse.notes || null,
+        status: 'confirmed',
+        payment_id: paymentId || paymentData?.paymentId,
+      };
+
       const res = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: session.user.id,
-          barber_id: dataToUse.barberId,
-          service_id: dataToUse.serviceId,
-          start_at: startDate.toISOString(),
-          end_at: endDate.toISOString(),
-          duration_minutes: service.duration_minutes,
-          notes: dataToUse.notes || null,
-          status: 'confirmed',
-          payment_id: paymentId || paymentData?.paymentId,
-        }),
+        body: JSON.stringify(appointmentPayload),
       });
 
       if (!res.ok) {

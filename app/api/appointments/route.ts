@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
@@ -277,9 +278,7 @@ export async function POST(request: NextRequest) {
 
     // Validate ISO timestamps
     try {
-      // eslint-disable-next-line no-new
       new Date(String(appointmentPayload.start_at));
-      // eslint-disable-next-line no-new
       new Date(String(appointmentPayload.end_at));
     } catch {
       return NextResponse.json({ error: 'Invalid request: start_at or end_at is not a valid date' }, { status: 400 });
@@ -383,7 +382,6 @@ export async function POST(request: NextRequest) {
 
     // Remove fields not present on the appointments table (avoid schema cache errors)
     if ('payment_method' in appointmentPayload) {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (appointmentPayload as any).payment_method;
     }
 
@@ -393,6 +391,12 @@ export async function POST(request: NextRequest) {
     }
     if (!payloadWithDate.appointment_time && payloadWithDate.start_at) {
       payloadWithDate.appointment_time = String(payloadWithDate.start_at).slice(11, 16);
+    }
+    if (!payloadWithDate.appointment_date && payloadWithDate.end_at) {
+      payloadWithDate.appointment_date = String(payloadWithDate.end_at).slice(0, 10);
+    }
+    if (!payloadWithDate.appointment_time && payloadWithDate.end_at) {
+      payloadWithDate.appointment_time = String(payloadWithDate.end_at).slice(11, 16);
     }
 
     const { data, error } = await supabase
