@@ -33,6 +33,7 @@ interface Appointment {
   service_category: string;
   appointment_date: string;
   appointment_time: string;
+  created_at?: string;
   status: 'Upcoming' | 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
   barber_id: string | null;
   payment_id?: string | null;
@@ -213,6 +214,13 @@ function getDisplayTime(timeValue: unknown, fallbackDate: Date): string {
     return trimmed.slice(0, 5);
   }
   return fallbackDate.toTimeString().slice(0, 5);
+}
+
+function getBookingDate(appt: Appointment): string | null {
+  if (appt.created_at) {
+    return String(appt.created_at).slice(0, 10);
+  }
+  return appt.appointment_date || null;
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
@@ -426,6 +434,7 @@ export default function AdminDashboardPage() {
           service_category: service?.category || a.service_category || 'Other',
           appointment_date: appointmentDate,
           appointment_time: appointmentTime,
+          created_at:       a.created_at ?? a.start_at ?? new Date().toISOString(),
           status:           rawStatus,
           barber_id:        a.barber_id,
           payment_id:      a.payment_id ?? null,
@@ -559,14 +568,14 @@ export default function AdminDashboardPage() {
 
   const summaryAppointments = useMemo(() => {
     return appointments.filter(a => {
-      const apptDate = a.appointment_date || ((a as any).start_at ? String((a as any).start_at).slice(0, 10) : null);
-      if (!apptDate) return false;
+      const bookingDate = getBookingDate(a);
+      if (!bookingDate) return false;
       if (summaryMode === 'day') {
         if (!summaryDate) return false;
-        return apptDate === summaryDate;
+        return bookingDate === summaryDate;
       }
-      if (summaryStartDate && apptDate < summaryStartDate) return false;
-      if (summaryEndDate && apptDate > summaryEndDate) return false;
+      if (summaryStartDate && bookingDate < summaryStartDate) return false;
+      if (summaryEndDate && bookingDate > summaryEndDate) return false;
       return true;
     });
   }, [appointments, summaryMode, summaryDate, summaryStartDate, summaryEndDate]);
