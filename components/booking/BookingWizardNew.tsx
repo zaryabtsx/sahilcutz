@@ -252,7 +252,9 @@ export function BookingWizard({ onComplete }: BookingWizardProps) {
         return;
       }
 
-      const startDate = new Date(`${dataToUse.date}T${dataToUse.time}`);
+      const [year, month, day] = dataToUse.date.split('-').map(Number);
+      const [hour, minute] = dataToUse.time.split(':').map(Number);
+      const startDate = new Date(year, month - 1, day, hour, minute, 0);
       const endDate = new Date(startDate.getTime() + service.duration_minutes * 60000);
 
       const res = await fetch('/api/appointments', {

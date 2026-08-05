@@ -125,8 +125,16 @@ function localDateKey(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function buildLocalIsoTimestamp(date: string, time: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hours, minutes] = (time || '00:00').slice(0, 5).split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0).toISOString();
+}
+
 function dateTimeFromParts(date: string, time: string): Date {
-  return new Date(`${date}T${(time || '00:00').slice(0, 5)}:00`);
+  const [year, month, day] = date.split('-').map(Number);
+  const [hours, minutes] = (time || '00:00').slice(0, 5).split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0);
 }
 
 function isAppointmentExpired(appt: Appointment): boolean {
@@ -724,7 +732,7 @@ export default function AdminDashboardPage() {
   setFormError(''); setSubmitting(true);
   try {
     const matchedService = services.find(s => s.name === form.service_name);
-    const start_at  = new Date(`${form.appointment_date}T${form.appointment_time}:00`).toISOString();
+    const start_at  = buildLocalIsoTimestamp(form.appointment_date, form.appointment_time);
     const duration  = matchedService?.duration_minutes ?? 30;
     const end_at    = new Date(new Date(start_at).getTime() + duration * 60000).toISOString();
     const overriddenAppointments = emergencyConflicts;

@@ -103,6 +103,12 @@ function fmtTime12(t: string): string {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function buildLocalIsoTimestamp(date: string, time: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hours, minutes] = time.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0).toISOString();
+}
+
 function isoDate(d: Date): string {
   return d.toISOString().split('T')[0];
 }
@@ -528,8 +534,8 @@ function BookingPageContent() {
     const bookedDuration = snapshot.selectedDuration;
     const bookedDate = snapshot.selectedDate;
     const bookedBarberName = snapshot.barberName;
-    const startAt = new Date(`${bookedDate}T${bookedSlot.start_time}:00`).toISOString();
-    const endAt = new Date(`${bookedDate}T${bookedSlot.end_time}:00`).toISOString();
+    const startAt = buildLocalIsoTimestamp(bookedDate, bookedSlot.start_time);
+    const endAt = buildLocalIsoTimestamp(bookedDate, bookedSlot.end_time);
 
     try {
       const { error: profileErr } = await supabase.from('profiles').upsert({
