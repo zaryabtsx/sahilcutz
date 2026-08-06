@@ -1,9 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable prefer-const */
-import { supabase } from './supabase';
 import { isLastTwoDaysOfMonth } from './scheduling';
 import type { AppointmentItem, BarberProfile, ServiceItem } from './types';
+import { createClient } from '@supabase/supabase-js';
+
+function getServiceClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error('Server misconfigured: missing Supabase service role key');
+  }
+
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+const supabase = getServiceClient();
 
 type AppointmentRow = AppointmentItem & {
   appointment_date?: string | null;
