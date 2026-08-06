@@ -43,8 +43,21 @@ function parseDailyTime(value: string) {
   return Number(hourString) * 60 + Number(minuteString);
 }
 
+function normalizeAppointmentTime(value: string) {
+  const raw = String(value || '').trim();
+  const timePortion = raw.includes('T') ? raw.split('T').pop() ?? raw : raw;
+  const timeOnly = timePortion.split(' ')[0].split('Z')[0].split('.')[0];
+  return timeOnly.slice(0, 5).padEnd(5, '0');
+}
+
 function formatDateKey(dateString: string) {
-  return new Date(dateString).toISOString().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return dateString;
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return dateString.slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function appointmentWindow(startMinutes: number, duration: number, buffer: number) {
@@ -59,9 +72,9 @@ export function generateAvailabilitySlots(
   bufferMinutes = 10,
   stepMinutes = 15,
 ): TimeSlot[] {
-  const dateKey = formatDateKey(date);
-  const dayNameShort = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
-  const dayNameLong = new Date(date).toLocaleDateString('en-US', { weekday: 'long' });
+  const dateKey = date;
+  const dayNameShort = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+  const dayNameLong = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
   const isOffDay = barber.working_hours.off_days?.some(
     (d: string) => d.toLowerCase() === dayNameShort.toLowerCase() || d.toLowerCase() === dayNameLong.toLowerCase()
   );
@@ -78,16 +91,27 @@ export function generateAvailabilitySlots(
     end: parseDailyTime(item.end),
   }));
 
-  const occupiedWindows = bookedAppointments
-    .filter((appt) => formatDateKey(appt.start_at) === dateKey)
-    .map((appt) => appointmentWindow(toMinutes(appt.start_at.split('T')[1].slice(0, 5) + ' AM'), appt.duration_minutes, bufferMinutes));
-
   const customBooked = bookedAppointments
-    .filter((appt) => formatDateKey(appt.start_at) === dateKey)
-    .map((appt) => ({
-      start: new Date(appt.start_at).getHours() * 60 + new Date(appt.start_at).getMinutes(),
-      end: new Date(appt.end_at).getHours() * 60 + new Date(appt.end_at).getMinutes(),
-    }));
+    .filter((appt) => {
+      const apptDateKey = appt.appointment_date || formatDateKey(appt.start_at);
+      return apptDateKey === dateKey;
+    })
+    .map((appt) => {
+      const hasLocalParts = Boolean(appt.appointment_date && appt.appointment_time);
+      const appointmentDate = appt.appointment_date ?? '';
+      const appointmentTime = appt.appointment_time ?? '';
+      const startDate = hasLocalParts
+        ? new Date(`${appointmentDate}T${normalizeAppointmentTime(appointmentTime)}:00`)
+        : new Date(appt.start_at);
+      const endDate = hasLocalParts
+        ? new Date(startDate.getTime() + appt.duration_minutes * 60000)
+        : new Date(appt.end_at);
+
+      return {
+        start: startDate.getHours() * 60 + startDate.getMinutes(),
+        end: endDate.getHours() * 60 + endDate.getMinutes(),
+      };
+    });
 
   const ranges = [] as { start: number; end: number }[];
 

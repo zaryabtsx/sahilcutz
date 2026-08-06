@@ -65,6 +65,10 @@ export interface AppointmentItem {
   shift_source_id?: string | null;
   emergency_override_id?: string | null;
   notes?: string | null;
+  appointment_date?: string | null;
+  appointment_time?: string | null;
+  payment_id?: string | null;
+  payment_status?: string | null;
   created_at: string;
   updated_at: string;
 }

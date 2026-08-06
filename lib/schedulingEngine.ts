@@ -362,9 +362,15 @@ function isTimeInBreak(
 }
 
 function buildLocalIsoTimestamp(date: string, time: string): string {
-  const [year, month, day] = date.split('-').map(Number);
-  const [hours, minutes] = time.split(':').map(Number);
-  return new Date(year, month - 1, day, hours, minutes, 0).toISOString();
+  // Server-side: interpret `date` + `time` as Pakistan local time (UTC+05:00)
+  // and produce a canonical ISO string in UTC. This avoids using the
+  // server runtime local timezone which may be UTC and would produce
+  // incorrectly-shifted timestamps when running in server environments.
+  // Create an ISO string with explicit +05:00 offset so Date parsing
+  // yields the correct UTC instant.
+  const isoWithOffset = `${date}T${time}:00+05:00`;
+  const parsed = new Date(isoWithOffset);
+  return parsed.toISOString();
 }
 
 /**

@@ -131,8 +131,10 @@ function localDateKey(date = new Date()): string {
 
 function buildLocalIsoTimestamp(date: string, time: string): string {
   const [year, month, day] = date.split('-').map(Number);
-  const [hours, minutes] = (time || '00:00').slice(0, 5).split(':').map(Number);
-  return new Date(year, month - 1, day, hours, minutes, 0).toISOString();
+  const [hours, minutes] = time.slice(0, 5).split(':').map(Number);
+  // Pakistan Standard Time = UTC+5 (no daylight saving) — hardcoded, runtime timezone se independent
+  const utcMillis = Date.UTC(year, month - 1, day, hours - 5, minutes, 0);
+  return new Date(utcMillis).toISOString();
 }
 
 function dateTimeFromParts(date: string, time: string): Date {

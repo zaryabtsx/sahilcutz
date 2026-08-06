@@ -85,23 +85,50 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+function isPaymentConfirmed(value?: string | null): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['completed', 'complete', 'success', 'paid', 'settled', 'confirmed', 'succeeded'].includes(normalized);
+}
+
+function shouldBlockAppointment(appointment: { status?: string | null; payment_id?: string | null }, paymentStatus?: string | null): boolean {
+  const normalizedStatus = String(appointment.status || '').trim().toLowerCase();
+  if (['cancelled', 'canceled'].includes(normalizedStatus)) return false;
+  if (normalizedStatus === 'pending') return isPaymentConfirmed(paymentStatus);
+  return true;
+}
+
 function getLocalDateKey(value?: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  // Derive the local date in Pakistan timezone (Asia/Karachi)
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi' });
+    // en-CA produces YYYY-MM-DD formatting
+    return fmt.format(date);
+  } catch (err) {
+    // Fallback to UTC-derived date if Intl isn't available
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
 }
 
 function getLocalTimeKey(value?: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
+  // Format time in Pakistan timezone
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', hour12: false, hour: '2-digit', minute: '2-digit' });
+    return fmt.format(date);
+  } catch (err) {
+    // Fallback to UTC-derived time if Intl isn't available
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
 }
 
 function normalizeEmailDetails(value: unknown): BookingEmailDetails | undefined {
@@ -282,7 +309,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json(data);
+    const appointmentRows = (data ?? []) as Array<{
+      id: string;
+      payment_id?: string | null;
+      status?: string | null;
+      [key: string]: unknown;
+    }>;
+
+    const paymentIds = appointmentRows
+      .map((appointment) => appointment.payment_id)
+      .filter((value): value is string => Boolean(value));
+
+    const paymentStatuses = new Map<string, string | null>();
+    if (paymentIds.length) {
+      const { data: paymentRows, error: paymentError } = await supabase
+        .from('payments')
+        .select('id, status')
+        .in('id', paymentIds);
+
+      if (!paymentError && Array.isArray(paymentRows)) {
+        for (const paymentRow of paymentRows as Array<{ id: string; status?: string | null }>) {
+          if (paymentRow?.id) {
+            paymentStatuses.set(paymentRow.id, paymentRow.status ?? null);
+          }
+        }
+      }
+    }
+
+    const blockedAppointments = appointmentRows.flatMap((appointment) => {
+      const paymentStatus = appointment.payment_id ? paymentStatuses.get(appointment.payment_id) ?? null : null;
+      if (!shouldBlockAppointment(appointment, paymentStatus)) {
+        return [];
+      }
+
+      return [{
+        ...appointment,
+        payment_status: paymentStatus,
+      }];
+    });
+
+    return NextResponse.json(blockedAppointments);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

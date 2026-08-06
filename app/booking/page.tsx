@@ -69,6 +69,8 @@ interface BookedAppt {
   end_at: string;
   duration_minutes: number;
   status: string;
+  payment_id?: string | null;
+  payment_status?: string | null;
 }
 
 interface PendingBookingSnapshot {
@@ -107,8 +109,29 @@ function fmtTime12(t: string): string {
 
 function buildLocalIsoTimestamp(date: string, time: string): string {
   const [year, month, day] = date.split('-').map(Number);
-  const [hours, minutes] = time.split(':').map(Number);
-  return new Date(year, month - 1, day, hours, minutes, 0).toISOString();
+  const [hours, minutes] = time.slice(0, 5).split(':').map(Number);
+  // Pakistan Standard Time = UTC+5 (no daylight saving) — hardcoded, runtime timezone se independent
+  const utcMillis = Date.UTC(year, month - 1, day, hours - 5, minutes, 0);
+  return new Date(utcMillis).toISOString();
+}
+
+function normalizeAppointmentTime(value: string): string {
+  const raw = String(value || '').trim();
+  const timePortion = raw.includes('T') ? raw.split('T').pop() ?? raw : raw;
+  const timeOnly = timePortion.split(' ')[0].split('Z')[0].split('.')[0];
+  return timeOnly.slice(0, 5).padEnd(5, '0');
+}
+
+function isPaymentConfirmed(value?: string | null): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['completed', 'complete', 'success', 'paid', 'settled', 'confirmed', 'succeeded'].includes(normalized);
+}
+
+function shouldBlockAppointment(appointment: BookedAppt): boolean {
+  const normalizedStatus = String(appointment.status || '').trim().toLowerCase();
+  if (['cancelled', 'canceled'].includes(normalizedStatus)) return false;
+  if (normalizedStatus === 'pending') return isPaymentConfirmed(appointment.payment_status);
+  return true;
 }
 
 function isoDate(d: Date): string {
@@ -208,21 +231,33 @@ function computeAvailableSlots(
   const selectedDayStart = new Date(`${selectedDate}T00:00:00`);
   const selectedDayEnd = new Date(`${selectedDate}T23:59:59.999`);
 
-  const blockedRanges = booked
-    .filter(b => !['Cancelled', 'cancelled'].includes(b.status))
+ const blockedRanges = booked
+    .filter(shouldBlockAppointment)
     .filter(b => !b.barber_id || b.barber_id === barberId)
     .map((b) => {
       let startAt: Date | null = null;
       let endAt: Date | null = null;
+      let source: 'start_at' | 'appointment_date_time' | null = null;
 
-      if (b.start_at && b.end_at) {
-        startAt = new Date(b.start_at);
-        endAt = new Date(b.end_at);
-      } else if (b.appointment_date && b.appointment_time) {
-        const iso = buildLocalIsoTimestamp(b.appointment_date, b.appointment_time);
-        startAt = new Date(iso);
-        const duration = Number(b.duration_minutes) || 30;
-        endAt = new Date(startAt.getTime() + duration * 60000);
+      if (b.appointment_date && b.appointment_time) {
+        const timeStr = normalizeAppointmentTime(b.appointment_time);
+        const localStart = new Date(`${b.appointment_date}T${timeStr}:00`);
+        const duration = Number(b.duration_minutes);
+        if (!Number.isNaN(localStart.getTime()) && !Number.isNaN(duration) && duration > 0) {
+          startAt = localStart;
+          endAt = new Date(localStart.getTime() + duration * 60000);
+          source = 'appointment_date_time';
+        }
+      }
+
+      if ((!startAt || !endAt) && b.start_at && b.end_at) {
+        const parsedStart = new Date(b.start_at);
+        const parsedEnd = new Date(b.end_at);
+        if (!Number.isNaN(parsedStart.getTime()) && !Number.isNaN(parsedEnd.getTime())) {
+          startAt = parsedStart;
+          endAt = parsedEnd;
+          source = 'start_at';
+        }
       }
 
       if (!startAt || !endAt || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
@@ -233,12 +268,31 @@ function computeAvailableSlots(
       const rangeEnd = Math.min(selectedDayEnd.getTime(), endAt.getTime());
       if (rangeEnd <= rangeStart) return null;
 
-      return {
+      const range = {
         from: Math.max(0, Math.floor((rangeStart - selectedDayStart.getTime()) / 60000)),
         to: Math.min(24 * 60, Math.ceil((rangeEnd - selectedDayStart.getTime()) / 60000)),
       };
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('computeAvailableSlots blockedRange entry', {
+          selectedDate,
+          barberId,
+          appointment: b,
+          source,
+          durationMinutes: b.duration_minutes,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          range,
+        });
+      }
+
+      return range;
     })
     .filter((range): range is { from: number; to: number } => range !== null);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('Blocked ranges computed', selectedDate, barberId, blockedRanges);
+  }
 
   const nowMins =
     isoDate(new Date()) === selectedDate
@@ -246,23 +300,38 @@ function computeAvailableSlots(
       : 0;
 
   const slots: ComputedSlot[] = [];
-  const slotStep = 15;
+  const slotStep = durationMins;
 
   effectiveWindows.forEach(win => {
     const winStart = timeToMins(win.start_time);
     const winEnd   = timeToMins(win.end_time);
     let cursor = winStart;
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('computeAvailableSlots blockedRanges', blockedRanges);
+    }
+
     while (cursor + durationMins <= winEnd) {
       const slotEnd = cursor + durationMins;
-
+      const overlap = blockedRanges.find(r => cursor < r.to && slotEnd > r.from);
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('computeAvailableSlots slot check', {
+          barberId,
+          cursor,
+          slotEnd,
+          durationMins,
+          overlap,
+          blockedRanges,
+        });
+      }
       const isPast = cursor < nowMins;
-      const overlaps = blockedRanges.some(r => cursor < r.to && slotEnd > r.from);
+      const status: ComputedSlot['status'] = overlap ? 'booked' : isPast ? 'past' : 'available';
+
       slots.push({
         barber_id: barberId,
         start_time: minsToTime(cursor),
         end_time: minsToTime(slotEnd),
-        status: isPast ? 'past' : (overlaps ? 'booked' : 'available'),
+        status,
       });
       cursor += slotStep;
     }
@@ -418,14 +487,10 @@ function BookingPageContent() {
 const loadSlotsForDate = useCallback(async (date: string) => {
     setLoadingSlots(true);
     setSelectedSlot(null);
-    const localStartOfDay = new Date(`${date}T00:00:00`);
-    const localEndOfDay = new Date(`${date}T23:59:59`);
 
     const [winRes, apptRes] = await Promise.all([
       supabase.from('slots').select('*').eq('slot_date', date).eq('is_available', true),
-      fetch(
-        `/api/appointments?appointmentDate=${encodeURIComponent(date)}&rangeStart=${encodeURIComponent(localStartOfDay.toISOString())}&rangeEnd=${encodeURIComponent(localEndOfDay.toISOString())}&excludeCancelled=true`
-      ).then((res) => res.json()),
+      fetch(`/api/appointments?date=${encodeURIComponent(date)}&excludeCancelled=true`).then((res) => res.json()),
     ]);
 
     setWindows((winRes.data ?? []) as AvailWindow[]);
@@ -433,7 +498,11 @@ const loadSlotsForDate = useCallback(async (date: string) => {
       console.warn('Failed to load booked appointments for date', date, apptRes?.error);
       setBooked([]);
     } else {
-      setBooked(apptRes as BookedAppt[]);
+      const bookings = apptRes as BookedAppt[];
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('Loaded booked appointments for date', date, bookings);
+      }
+      setBooked(bookings);
     }
     setLoadingSlots(false);
   }, []);
