@@ -85,6 +85,25 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+function getLocalDateKey(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getLocalTimeKey(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 function normalizeEmailDetails(value: unknown): BookingEmailDetails | undefined {
   if (!isRecord(value)) return undefined;
 
@@ -209,7 +228,6 @@ async function sendBookingEmails({
     console.error('Booking email trigger failed:', error instanceof Error ? error.message : error);
   }
 }
-
 export async function GET(request: NextRequest) {
   try {
     const supabase = getServerClient();
@@ -218,6 +236,10 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const date = searchParams.get('date');
     const status = searchParams.get('status');
+    const appointmentDate = searchParams.get('appointmentDate');
+    const rangeStart = searchParams.get('rangeStart');
+    const rangeEnd = searchParams.get('rangeEnd');
+    const excludeCancelled = searchParams.get('excludeCancelled') === 'true';
 
     let queryBuilder = supabase.from('appointments').select('*');
 
@@ -230,16 +252,28 @@ export async function GET(request: NextRequest) {
     if (status) {
       queryBuilder = queryBuilder.eq('status', status);
     }
+    if (excludeCancelled) {
+      queryBuilder = queryBuilder.not('status', 'in', '(Cancelled,cancelled)');
+    }
 
-    if (date) {
+    if (appointmentDate && rangeStart && rangeEnd) {
+      // Catch rows matched either by the stored appointment_date OR by a start/end overlap
+      queryBuilder = queryBuilder.or(
+        `appointment_date.eq.${appointmentDate},and(start_at.lt.${rangeEnd},end_at.gt.${rangeStart})`
+      );
+    } else if (appointmentDate) {
+      queryBuilder = queryBuilder.eq('appointment_date', appointmentDate);
+    } else if (rangeStart && rangeEnd) {
+      queryBuilder = queryBuilder.lt('start_at', rangeEnd).gt('end_at', rangeStart);
+    } else if (date) {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
       queryBuilder = queryBuilder
-        .gte('start_at', startOfDay.toISOString())
-        .lte('end_at', endOfDay.toISOString());
+        .lte('start_at', endOfDay.toISOString())
+        .gt('end_at', startOfDay.toISOString());
     }
 
     const { data, error } = await queryBuilder.order('start_at', { ascending: true });
@@ -256,7 +290,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
 export async function POST(request: NextRequest) {
   try {
     const supabase = getServerClient();
@@ -276,13 +309,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate ISO timestamps
-    try {
-      new Date(String(appointmentPayload.start_at));
-      new Date(String(appointmentPayload.end_at));
-    } catch {
+    // Validate and normalize timestamps
+    const requestedStart = new Date(String(appointmentPayload.start_at));
+    const requestedEnd = new Date(String(appointmentPayload.end_at));
+
+    if (Number.isNaN(requestedStart.getTime()) || Number.isNaN(requestedEnd.getTime())) {
       return NextResponse.json({ error: 'Invalid request: start_at or end_at is not a valid date' }, { status: 400 });
     }
+
+    const normalizedAppointmentPayload = {
+      ...appointmentPayload,
+      start_at: requestedStart.toISOString(),
+      end_at: requestedEnd.toISOString(),
+    };
 
     // Check if payment is required (non-emergency bookings)
     if (!isEmergency) {
@@ -345,8 +384,8 @@ export async function POST(request: NextRequest) {
         user_id: appointmentPayload.user_id,
         barber_id: appointmentPayload.barber_id,
         service_id: appointmentPayload.service_id,
-        start_at: appointmentPayload.start_at,
-        end_at: appointmentPayload.end_at,
+        start_at: requestedStart.toISOString(),
+        end_at: requestedEnd.toISOString(),
         duration_minutes: appointmentPayload.duration_minutes,
         status: 'emergency',
         is_emergency: true,
@@ -363,16 +402,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Prevent double-booking: ensure no overlapping appointment exists for the same barber
-    const requestedStart = new Date(String(appointmentPayload.start_at)).toISOString();
-    const requestedEnd = new Date(String(appointmentPayload.end_at)).toISOString();
+    const requestedStartIso = requestedStart.toISOString();
+    const requestedEndIso = requestedEnd.toISOString();
 
     const { data: conflicts, error: conflictError } = await supabase
       .from('appointments')
       .select('id,status,start_at,end_at')
       .eq('barber_id', appointmentPayload.barber_id)
       .neq('status', 'cancelled')
-      .lt('start_at', requestedEnd)
-      .gt('end_at', requestedStart);
+      .lt('start_at', requestedEndIso)
+      .gt('end_at', requestedStartIso);
 
     if (conflictError) {
       console.warn('Could not check appointment conflicts:', conflictError.message);
@@ -385,18 +424,18 @@ export async function POST(request: NextRequest) {
       delete (appointmentPayload as any).payment_method;
     }
 
-    const payloadWithDate = { ...appointmentPayload };
+    const payloadWithDate = { ...normalizedAppointmentPayload };
     if (!payloadWithDate.appointment_date && payloadWithDate.start_at) {
-      payloadWithDate.appointment_date = String(payloadWithDate.start_at).slice(0, 10);
+      payloadWithDate.appointment_date = getLocalDateKey(payloadWithDate.start_at) || String(payloadWithDate.start_at).slice(0, 10);
     }
     if (!payloadWithDate.appointment_time && payloadWithDate.start_at) {
-      payloadWithDate.appointment_time = String(payloadWithDate.start_at).slice(11, 16);
+      payloadWithDate.appointment_time = getLocalTimeKey(payloadWithDate.start_at) || String(payloadWithDate.start_at).slice(11, 16);
     }
     if (!payloadWithDate.appointment_date && payloadWithDate.end_at) {
-      payloadWithDate.appointment_date = String(payloadWithDate.end_at).slice(0, 10);
+      payloadWithDate.appointment_date = getLocalDateKey(payloadWithDate.end_at) || String(payloadWithDate.end_at).slice(0, 10);
     }
     if (!payloadWithDate.appointment_time && payloadWithDate.end_at) {
-      payloadWithDate.appointment_time = String(payloadWithDate.end_at).slice(11, 16);
+      payloadWithDate.appointment_time = getLocalTimeKey(payloadWithDate.end_at) || String(payloadWithDate.end_at).slice(11, 16);
     }
 
     const { data, error } = await supabase
@@ -425,7 +464,7 @@ export async function POST(request: NextRequest) {
         type: 'booking',
         message: appointmentPayload.status === 'pending'
           ? `Your appointment is pending confirmation. We will update you once the advance payment is received.`
-          : `Your appointment has been confirmed for ${new Date(appointmentPayload.start_at).toLocaleString()}`,
+          : `Your appointment has been confirmed for ${new Date(requestedStartIso).toLocaleString()}`,
         related_appointment_id: data.id,
         read: false,
       },

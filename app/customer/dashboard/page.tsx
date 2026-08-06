@@ -67,6 +67,25 @@ function servicePrice(appt: AppointmentRow): number | null {
   return appt.services?.price ?? appt.revenue ?? null;
 }
 
+function getLocalDateFromTimestamp(value?: string | null): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function displayAppointmentTime(appt: AppointmentRow): string {
+  if (appt.appointment_time) return appt.appointment_time;
+  const parsed = new Date(appt.start_at);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${String(parsed.getUTCHours()).padStart(2, '0')}:${String(parsed.getUTCMinutes()).padStart(2, '0')}`;
+  }
+  return '';
+}
+
 export default function CustomerDashboardPage() {
   const router = useRouter();
 
@@ -199,7 +218,7 @@ export default function CustomerDashboardPage() {
 
   const openReschedule = (appt: AppointmentRow) => {
     setRescheduleTarget(appt);
-    setRescheduleDate(new Date(appt.start_at).toISOString().slice(0, 10));
+    setRescheduleDate(appt.appointment_date || getLocalDateFromTimestamp(appt.start_at) || new Date(appt.start_at).toISOString().slice(0, 10));
     setRescheduleTime('');
     setRescheduleError('');
   };
@@ -242,6 +261,12 @@ export default function CustomerDashboardPage() {
         throw new Error('Please choose a valid available time slot.');
       }
 
+      const appointmentTime = new Date(selectedSlot.start).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+
       const response = await fetch('/api/customer/appointments', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -252,6 +277,8 @@ export default function CustomerDashboardPage() {
           start_at: selectedSlot.start,
           end_at: selectedSlot.end,
           duration_minutes: rescheduleTarget.duration_minutes,
+          appointment_date: rescheduleDate,
+          appointment_time: appointmentTime,
         }),
       });
 
@@ -420,7 +447,10 @@ export default function CustomerDashboardPage() {
                           <div>
                             <p className="text-sm text-muted-foreground">{serviceName(appt)}</p>
                             <p className="mt-1 text-xl font-bold text-foreground">
-                              {new Date(appt.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {appt.appointment_date ? new Date(appt.appointment_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (() => {
+                                const fallbackDate = getLocalDateFromTimestamp(appt.start_at);
+                                return fallbackDate ? new Date(fallbackDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Invalid date';
+                              })()}
                             </p>
                             {appt.barbers?.name && (
                               <p className="mt-1 text-xs text-muted-foreground">with {appt.barbers.name}</p>
@@ -432,7 +462,7 @@ export default function CustomerDashboardPage() {
                         </div>
                         <div className="mt-4 flex flex-wrap gap-3 text-sm text-muted-foreground">
                           <span>
-                            {new Date(appt.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            {displayAppointmentTime(appt)}
                           </span>
                           <span>•</span>
                           <span>{appt.duration_minutes} min</span>
@@ -487,7 +517,10 @@ export default function CustomerDashboardPage() {
                             <div>
                               <p className="text-sm text-muted-foreground">{serviceName(appt)}</p>
                               <p className="mt-1 text-xl font-bold text-foreground">
-                                {new Date(appt.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {appt.appointment_date ? new Date(appt.appointment_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (() => {
+                                  const fallbackDate = getLocalDateFromTimestamp(appt.start_at);
+                                  return fallbackDate ? new Date(fallbackDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Invalid date';
+                                })()}
                               </p>
                               {appt.barbers?.name && (
                                 <p className="mt-1 text-xs text-muted-foreground">with {appt.barbers.name}</p>

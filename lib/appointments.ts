@@ -154,16 +154,29 @@ async function getAppointmentsByDateAndBarber(
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const { data, error } = await supabase
+  const dateQuery = await supabase
     .from('appointments')
     .select('*')
-    .eq('barber_id', barberId)
     .neq('status', 'cancelled')
-    .gte('start_at', startOfDay.toISOString())
-    .lte('end_at', endOfDay.toISOString());
+    .eq('appointment_date', date);
 
-  if (error) return [];
-  return data || [];
+  const overlapQuery = await supabase
+    .from('appointments')
+    .select('*')
+    .neq('status', 'cancelled')
+    .lte('start_at', endOfDay.toISOString())
+    .gt('end_at', startOfDay.toISOString());
+
+  if (dateQuery.error || overlapQuery.error) return [];
+
+  const allAppointments = [...(dateQuery.data || []), ...(overlapQuery.data || [])];
+  const uniqueAppointments = Array.from(
+    new Map(allAppointments.map((appt) => [appt.id, appt])).values(),
+  );
+
+  return uniqueAppointments.filter(
+    (appt) => !appt.barber_id || appt.barber_id === barberId,
+  );
 }
 
 async function getBarberProfile(barberId: string): Promise<BarberProfile | null> {

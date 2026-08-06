@@ -168,21 +168,6 @@ async function syncProfileFromAuth(profile: UserProfile): Promise<{ success: boo
     return { success: false, message: 'Unable to sync profile to the database.' };
   }
 }
-
-async function sendWelcomeEmail(email: string, fullName: string): Promise<void> {
-  if (!isBrowser()) return;
-
-  try {
-    await fetch('/api/auth/welcome-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, fullName }),
-    });
-  } catch (error) {
-    console.warn('Welcome email request failed:', error);
-  }
-}
-
 // ─── User Sign-In ─────────────────────────────────────────────────────────────
 export async function signIn(
   email: string,
@@ -346,8 +331,6 @@ export async function signUp(payload: {
       console.warn('Profile sync warning:', profileSyncResult.message);
     }
 
-    await sendWelcomeEmail(payload.email, payload.fullName);
-
     if (response.data.session?.access_token) {
       setSession({
         user: profile,
@@ -357,7 +340,7 @@ export async function signUp(payload: {
 
     return {
       success: true,
-      message: 'Account created successfully. Please check your email to verify your account.',
+      message: 'Account created successfully.',
     };
   }
 
@@ -376,7 +359,6 @@ export async function signUp(payload: {
     },
   };
   setSession(newSession);
-  await sendWelcomeEmail(payload.email, payload.fullName);
   return { success: true, message: 'Account created' };
 }
 

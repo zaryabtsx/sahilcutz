@@ -96,15 +96,17 @@ export async function GET(request: NextRequest) {
 
     const appointmentRows = (appointmentsResult.data ?? []) as Array<Record<string, unknown>>;
     const normalizedAppointments = appointmentRows.map((appt) => {
+      const startAtDate = typeof appt.start_at === 'string' ? new Date(appt.start_at) : null;
+      const endAtDate = typeof appt.end_at === 'string' ? new Date(appt.end_at) : null;
       const appointmentDate =
         typeof appt.appointment_date === 'string' ? appt.appointment_date :
-        typeof appt.start_at === 'string' ? appt.start_at.slice(0, 10) :
-        typeof appt.end_at === 'string' ? appt.end_at.slice(0, 10) :
+        startAtDate instanceof Date && !Number.isNaN(startAtDate.getTime()) ? `${startAtDate.getUTCFullYear()}-${String(startAtDate.getUTCMonth() + 1).padStart(2, '0')}-${String(startAtDate.getUTCDate()).padStart(2, '0')}` :
+        endAtDate instanceof Date && !Number.isNaN(endAtDate.getTime()) ? `${endAtDate.getUTCFullYear()}-${String(endAtDate.getUTCMonth() + 1).padStart(2, '0')}-${String(endAtDate.getUTCDate()).padStart(2, '0')}` :
         null;
       const appointmentTime =
         typeof appt.appointment_time === 'string' ? appt.appointment_time :
-        typeof appt.start_at === 'string' ? appt.start_at.slice(11, 16) :
-        typeof appt.end_at === 'string' ? appt.end_at.slice(11, 16) :
+        startAtDate instanceof Date && !Number.isNaN(startAtDate.getTime()) ? `${String(startAtDate.getUTCHours()).padStart(2, '0')}:${String(startAtDate.getUTCMinutes()).padStart(2, '0')}` :
+        endAtDate instanceof Date && !Number.isNaN(endAtDate.getTime()) ? `${String(endAtDate.getUTCHours()).padStart(2, '0')}:${String(endAtDate.getUTCMinutes()).padStart(2, '0')}` :
         null;
       return {
         ...appt,

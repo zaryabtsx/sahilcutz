@@ -67,8 +67,13 @@ export async function GET(request: NextRequest) {
     const barbersById = new Map((barbersRes.data ?? []).map((barber) => [barber.id, barber]));
 
     const rows = (appointments ?? []).map((appointment) => {
-      const appointmentDate = appointment.appointment_date || (typeof appointment.start_at === 'string' ? appointment.start_at.slice(0, 10) : null);
-      const appointmentTime = appointment.appointment_time || (typeof appointment.start_at === 'string' ? appointment.start_at.slice(11, 16) : null);
+      const startAtDate = typeof appointment.start_at === 'string' ? new Date(appointment.start_at) : null;
+      const appointmentDate = appointment.appointment_date || (startAtDate instanceof Date && !Number.isNaN(startAtDate.getTime())
+        ? `${startAtDate.getUTCFullYear()}-${String(startAtDate.getUTCMonth() + 1).padStart(2, '0')}-${String(startAtDate.getUTCDate()).padStart(2, '0')}`
+        : null);
+      const appointmentTime = appointment.appointment_time || (startAtDate instanceof Date && !Number.isNaN(startAtDate.getTime())
+        ? `${String(startAtDate.getUTCHours()).padStart(2, '0')}:${String(startAtDate.getUTCMinutes()).padStart(2, '0')}`
+        : null);
       return {
         ...appointment,
         appointment_date: appointmentDate,
@@ -172,12 +177,21 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: 'That time is no longer available. Please choose another slot.' }, { status: 409 });
       }
 
+      const appointmentDate = typeof body?.appointment_date === 'string' && body.appointment_date
+        ? body.appointment_date
+        : `${requestedStart.getUTCFullYear()}-${String(requestedStart.getUTCMonth() + 1).padStart(2, '0')}-${String(requestedStart.getUTCDate()).padStart(2, '0')}`;
+      const appointmentTime = typeof body?.appointment_time === 'string' && body.appointment_time
+        ? body.appointment_time
+        : `${String(requestedStart.getUTCHours()).padStart(2, '0')}:${String(requestedStart.getUTCMinutes()).padStart(2, '0')}`;
+
       const { data, error } = await supabase
         .from('appointments')
         .update({
           start_at: requestedStart.toISOString(),
           end_at: requestedEnd.toISOString(),
           duration_minutes: Number(durationMinutes || existingAppointment.duration_minutes || 0),
+          appointment_date: appointmentDate,
+          appointment_time: appointmentTime,
           status: existingAppointment.status === 'cancelled' ? 'confirmed' : existingAppointment.status,
         })
         .eq('id', appointmentId)

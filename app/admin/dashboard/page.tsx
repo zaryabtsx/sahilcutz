@@ -33,6 +33,7 @@ interface Appointment {
   service_category: string;
   appointment_date: string;
   appointment_time: string;
+  start_at?: string | null;
   created_at?: string;
   status: 'Upcoming' | 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
   barber_id: string | null;
@@ -197,10 +198,21 @@ function normalizeStatus(status: unknown): Appointment['status'] {
 
 function getDisplayDate(dateValue: unknown, fallbackDate: Date): string {
   if (typeof dateValue === 'string' && dateValue.trim()) {
-    const trimmed = dateValue.slice(0, 10);
+    const trimmed = dateValue.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      const year = parsed.getUTCFullYear();
+      const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
   }
-  return fallbackDate.toISOString().split('T')[0];
+
+  const year = fallbackDate.getUTCFullYear();
+  const month = String(fallbackDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(fallbackDate.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function getDisplayTime(timeValue: unknown, fallbackDate: Date): string {
@@ -209,18 +221,40 @@ function getDisplayTime(timeValue: unknown, fallbackDate: Date): string {
     if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed;
     const parsed = new Date(trimmed);
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toTimeString().slice(0, 5);
+      const hours = String(parsed.getUTCHours()).padStart(2, '0');
+      const minutes = String(parsed.getUTCMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
     }
     return trimmed.slice(0, 5);
   }
-  return fallbackDate.toTimeString().slice(0, 5);
+
+  const hours = String(fallbackDate.getUTCHours()).padStart(2, '0');
+  const minutes = String(fallbackDate.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function getLocalDateFromTimestamp(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function getBookingDate(appt: Appointment): string | null {
+  if (appt.appointment_date) {
+    return appt.appointment_date;
+  }
+  const startAtDate = getLocalDateFromTimestamp(appt.start_at);
+  if (startAtDate) {
+    return startAtDate;
+  }
   if (appt.created_at) {
     return String(appt.created_at).slice(0, 10);
   }
-  return appt.appointment_date || null;
+  return null;
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
@@ -422,7 +456,7 @@ export default function AdminDashboardPage() {
         const profilePhone = user?.phone || a.customer_phone || storedCustomer.phone || a.phone || null;
         const appointmentDate = getDisplayDate(a.appointment_date || a.date || a.start_at, startDate);
         const appointmentTime = getDisplayTime(
-          a.appointment_time || a.time || (typeof a.start_at === 'string' ? a.start_at.slice(11, 16) : undefined),
+          a.appointment_time || a.time || undefined,
           startDate,
         );
 
@@ -555,12 +589,13 @@ export default function AdminDashboardPage() {
   const bookingTrend = useMemo(() => {
     const map: Record<string, { bookings: number; revenue: number }> = {};
     appointments.forEach(a => {
-      const apptDate = a.appointment_date || ((a as any).start_at ? String((a as any).start_at).slice(0,10) : null);
-      if (analyticsStartDate && apptDate && apptDate < analyticsStartDate) return;
-      if (analyticsEndDate && apptDate && apptDate > analyticsEndDate) return;
-      if (!map[a.appointment_date]) map[a.appointment_date] = { bookings: 0, revenue: 0 };
-      map[a.appointment_date].bookings++;
-      if (normalizeStatus(a.status) === 'Completed') map[a.appointment_date].revenue += Number(a.revenue);
+      const apptDate = a.appointment_date || getLocalDateFromTimestamp(a.start_at) || null;
+      if (!apptDate) return;
+      if (analyticsStartDate && apptDate < analyticsStartDate) return;
+      if (analyticsEndDate && apptDate > analyticsEndDate) return;
+      if (!map[apptDate]) map[apptDate] = { bookings: 0, revenue: 0 };
+      map[apptDate].bookings++;
+      if (normalizeStatus(a.status) === 'Completed') map[apptDate].revenue += Number(a.revenue);
     });
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).slice(-7)
       .map(([date, v]) => ({ day: new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' }), ...v }));
@@ -620,7 +655,7 @@ export default function AdminDashboardPage() {
   const servicePopularity = useMemo(() => {
     const counts: Record<string, number> = {};
     appointments.forEach(a => {
-      const apptDate = a.appointment_date || ((a as any).start_at ? String((a as any).start_at).slice(0,10) : null);
+      const apptDate = a.appointment_date || getLocalDateFromTimestamp(a.start_at) || null;
       if (!apptDate) return; // skip entries without a concrete date for category analytics
       if (analyticsStartDate && apptDate < analyticsStartDate) return;
       if (analyticsEndDate && apptDate > analyticsEndDate) return;

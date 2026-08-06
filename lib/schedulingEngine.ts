@@ -5,6 +5,11 @@ import { supabase } from './supabase';
 import { isLastTwoDaysOfMonth } from './scheduling';
 import type { AppointmentItem, BarberProfile, ServiceItem } from './types';
 
+type AppointmentRow = AppointmentItem & {
+  appointment_date?: string | null;
+  appointment_time?: string | null;
+};
+
 interface TimeSlot {
   start: string;      // Full ISO string (e.g. 2026-05-17T09:00:00.000Z)
   end: string;        // Full ISO string
@@ -58,7 +63,7 @@ const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
   }
 
   // Get existing appointments for this date
-  const existingAppointments = await getAppointmentsByDateAndBarber(barberId, date);
+  const existingAppointments = await getAppointmentsByDateAndBarber(barberId, date) as AppointmentRow[];
 
   const slots: TimeSlot[] = [];
   const slotDuration = 15; // 15-minute intervals
@@ -91,8 +96,27 @@ const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
 
       // Check for conflicts
       const hasConflict = existingAppointments.some((apt) => {
-        const aptStart = new Date(apt.start_at);
-        const aptEnd = new Date(apt.end_at);
+        let aptStart: Date | null = null;
+        let aptEnd: Date | null = null;
+
+        if (apt.start_at && apt.end_at) {
+          aptStart = new Date(apt.start_at);
+          aptEnd = new Date(apt.end_at);
+        }
+
+        if (!aptStart || !aptEnd) {
+          if (apt.appointment_date && apt.appointment_time) {
+            const iso = buildLocalIsoTimestamp(apt.appointment_date, apt.appointment_time);
+            aptStart = new Date(iso);
+            const duration = Number(apt.duration_minutes) || 30;
+            aptEnd = new Date(aptStart.getTime() + duration * 60000);
+          }
+        }
+
+        if (!aptStart || !aptEnd || Number.isNaN(aptStart.getTime()) || Number.isNaN(aptEnd.getTime())) {
+          return false;
+        }
+
         return !(slotEnd <= aptStart || currentTime >= aptEnd);
       });
 
@@ -230,7 +254,7 @@ async function getConflictingAppointments(
   const { data, error } = await supabase
     .from('appointments')
     .select('*')
-    .eq('barber_id', barberId)
+    .or(`barber_id.eq.${barberId},barber_id.is.null`)
     .neq('status', 'cancelled')
     .lt('start_at', endTime)
     .gt('end_at', startTime);
@@ -267,16 +291,29 @@ async function getAppointmentsByDateAndBarber(
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const { data, error } = await supabase
+  const dateQuery = await supabase
     .from('appointments')
     .select('*')
-    .eq('barber_id', barberId)
     .neq('status', 'cancelled')
-    .gte('start_at', startOfDay.toISOString())
-    .lte('end_at', endOfDay.toISOString());
+    .eq('appointment_date', date);
 
-  if (error) return [];
-  return data || [];
+  const overlapQuery = await supabase
+    .from('appointments')
+    .select('*')
+    .neq('status', 'cancelled')
+    .lte('start_at', endOfDay.toISOString())
+    .gt('end_at', startOfDay.toISOString());
+
+  if (dateQuery.error || overlapQuery.error) return [];
+
+  const allAppointments = [...(dateQuery.data || []), ...(overlapQuery.data || [])];
+  const uniqueAppointments = Array.from(
+    new Map(allAppointments.map((appt) => [appt.id, appt])).values(),
+  );
+
+  return uniqueAppointments.filter(
+    (appt) => !appt.barber_id || appt.barber_id === barberId,
+  );
 }
 
 async function getBarberProfile(barberId: string): Promise<BarberProfile | null> {
@@ -307,6 +344,12 @@ function isTimeInBreak(
 ): boolean {
   const timeStr = time.toTimeString().slice(0, 5);
   return breaks.some((b) => timeStr >= b.start && timeStr < b.end);
+}
+
+function buildLocalIsoTimestamp(date: string, time: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hours, minutes] = time.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0).toISOString();
 }
 
 /**

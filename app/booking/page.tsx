@@ -112,16 +112,10 @@ function buildLocalIsoTimestamp(date: string, time: string): string {
 }
 
 function isoDate(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-function timeFromTimestamp(value: string): string {
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`;
-  }
-
-  return value.match(/T(\d{2}:\d{2})/)?.[1] ?? '00:00';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function normalizeServiceToken(value: string): string {
@@ -211,21 +205,40 @@ function computeAvailableSlots(
         is_available: true,
       } as AvailWindow];
 
+  const selectedDayStart = new Date(`${selectedDate}T00:00:00`);
+  const selectedDayEnd = new Date(`${selectedDate}T23:59:59.999`);
+
   const blockedRanges = booked
-    .filter(b => b.barber_id === barberId && !['Cancelled', 'cancelled'].includes(b.status))
-    .map(b => {
-      const startTime = b.appointment_time || b.start_at?.slice(11, 16) || '00:00';
-      const endTime = b.end_at?.slice(11, 16) || (() => {
+    .filter(b => !['Cancelled', 'cancelled'].includes(b.status))
+    .filter(b => !b.barber_id || b.barber_id === barberId)
+    .map((b) => {
+      let startAt: Date | null = null;
+      let endAt: Date | null = null;
+
+      if (b.start_at && b.end_at) {
+        startAt = new Date(b.start_at);
+        endAt = new Date(b.end_at);
+      } else if (b.appointment_date && b.appointment_time) {
+        const iso = buildLocalIsoTimestamp(b.appointment_date, b.appointment_time);
+        startAt = new Date(iso);
         const duration = Number(b.duration_minutes) || 30;
-        const startMins = timeToMins(startTime);
-        const endMins = startMins + duration;
-        return `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
-      })();
+        endAt = new Date(startAt.getTime() + duration * 60000);
+      }
+
+      if (!startAt || !endAt || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+        return null;
+      }
+
+      const rangeStart = Math.max(selectedDayStart.getTime(), startAt.getTime());
+      const rangeEnd = Math.min(selectedDayEnd.getTime(), endAt.getTime());
+      if (rangeEnd <= rangeStart) return null;
+
       return {
-        from: timeToMins(startTime),
-        to: timeToMins(endTime),
+        from: Math.max(0, Math.floor((rangeStart - selectedDayStart.getTime()) / 60000)),
+        to: Math.min(24 * 60, Math.ceil((rangeEnd - selectedDayStart.getTime()) / 60000)),
       };
-    });
+    })
+    .filter((range): range is { from: number; to: number } => range !== null);
 
   const nowMins =
     isoDate(new Date()) === selectedDate
@@ -233,6 +246,7 @@ function computeAvailableSlots(
       : 0;
 
   const slots: ComputedSlot[] = [];
+  const slotStep = 15;
 
   effectiveWindows.forEach(win => {
     const winStart = timeToMins(win.start_time);
@@ -250,7 +264,7 @@ function computeAvailableSlots(
         end_time: minsToTime(slotEnd),
         status: isPast ? 'past' : (overlaps ? 'booked' : 'available'),
       });
-      cursor += durationMins;
+      cursor += slotStep;
     }
   });
 
@@ -401,26 +415,25 @@ function BookingPageContent() {
   }, [ready, requestedServiceTokens]);
 
   // ── Load availability windows + booked appts when date changes ──
-  const loadSlotsForDate = useCallback(async (date: string) => {
+const loadSlotsForDate = useCallback(async (date: string) => {
     setLoadingSlots(true);
     setSelectedSlot(null);
+    const localStartOfDay = new Date(`${date}T00:00:00`);
+    const localEndOfDay = new Date(`${date}T23:59:59`);
+
     const [winRes, apptRes] = await Promise.all([
       supabase.from('slots').select('*').eq('slot_date', date).eq('is_available', true),
-      supabase
-        .from('appointments')
-        .select('barber_id, start_at, end_at, duration_minutes, status, appointment_date, appointment_time')
-        .or(
-          `appointment_date.eq.${date},and(start_at.gte.${date}T00:00:00,start_at.lt.${date}T23:59:59),and(end_at.gte.${date}T00:00:00,end_at.lt.${date}T23:59:59)`
-        )
-        .not('status', 'in', '(Cancelled,cancelled)'),
+      fetch(
+        `/api/appointments?appointmentDate=${encodeURIComponent(date)}&rangeStart=${encodeURIComponent(localStartOfDay.toISOString())}&rangeEnd=${encodeURIComponent(localEndOfDay.toISOString())}&excludeCancelled=true`
+      ).then((res) => res.json()),
     ]);
 
     setWindows((winRes.data ?? []) as AvailWindow[]);
-    if (apptRes.error) {
-      console.warn('Failed to load booked appointments for date', date, apptRes.error.message);
+    if (!Array.isArray(apptRes)) {
+      console.warn('Failed to load booked appointments for date', date, apptRes?.error);
       setBooked([]);
     } else {
-      setBooked((apptRes.data ?? []) as BookedAppt[]);
+      setBooked(apptRes as BookedAppt[]);
     }
     setLoadingSlots(false);
   }, []);
