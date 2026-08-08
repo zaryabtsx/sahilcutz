@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest) {
     if (action === 'cancel') {
       const { data, error } = await supabase
         .from('appointments')
-        .update({ status: 'cancelled' })
+        .update({ status: 'Cancelled' })
         .eq('id', appointmentId)
         .select()
         .single();
@@ -164,8 +164,7 @@ export async function PATCH(request: NextRequest) {
         .select('id')
         .eq('barber_id', existingAppointment.barber_id)
         .neq('id', appointmentId)
-        .neq('status', 'cancelled')
-        .neq('status', 'completed')
+        .not('status', 'in', '(cancelled,Cancelled,canceled,Canceled,completed,Completed)')
         .lt('start_at', requestedEnd.toISOString())
         .gt('end_at', requestedStart.toISOString());
 
@@ -206,7 +205,7 @@ export async function PATCH(request: NextRequest) {
         {
           user_id: existingAppointment.user_id,
           type: 'reschedule',
-          message: `Your appointment has been rescheduled to ${requestedStart.toLocaleString()}.`,
+          message: `Your appointment has been rescheduled to ${requestedStart.toLocaleString('en-US', { timeZone: 'Asia/Karachi' })}.`,
           related_appointment_id: appointmentId,
           read: false,
         },

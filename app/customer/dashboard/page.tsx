@@ -77,11 +77,31 @@ function getLocalDateFromTimestamp(value?: string | null): string | null {
   return `${year}-${month}-${day}`;
 }
 
+function fmtTime12(t: string): string {
+  if (!t) return '';
+  // Handle full ISO timestamp (e.g. from /api/slots which returns ISO strings)
+  if (t.includes('T') || t.includes('Z')) {
+    const d = new Date(t);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' });
+    }
+  }
+  // Handle HH:MM strings (e.g. appointment_time stored in DB)
+  const [h, m] = t.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return t.slice(0, 5);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 function displayAppointmentTime(appt: AppointmentRow): string {
-  if (appt.appointment_time) return appt.appointment_time;
+  if (appt.appointment_time) return fmtTime12(appt.appointment_time);
   const parsed = new Date(appt.start_at);
   if (!Number.isNaN(parsed.getTime())) {
-    return `${String(parsed.getUTCHours()).padStart(2, '0')}:${String(parsed.getUTCMinutes()).padStart(2, '0')}`;
+    // Convert UTC to PKT (UTC+5) for display
+    const pktHours = (parsed.getUTCHours() + 5) % 24;
+    const minutes = parsed.getUTCMinutes();
+    const raw = `${String(pktHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    return fmtTime12(raw);
   }
   return '';
 }
@@ -532,7 +552,7 @@ export default function CustomerDashboardPage() {
                           </div>
                           <div className="mt-4 flex flex-wrap gap-3 text-sm text-muted-foreground">
                             <span>
-                              {new Date(appt.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                              {new Date(appt.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
                             </span>
                             <span>•</span>
                             <span>{appt.duration_minutes} min</span>
@@ -708,14 +728,14 @@ export default function CustomerDashboardPage() {
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-base font-semibold text-foreground">
-                              {slot.start ? new Date(slot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Invalid slot'}
-                            </span>
+                             <span className="text-base font-semibold text-foreground">
+                               {slot.start ? fmtTime12(slot.start) : 'Invalid slot'}
+                             </span>
                             {isSelected && <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-bold uppercase text-primary">Selected</span>}
                           </div>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {slot.end ? `Until ${new Date(slot.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
-                          </p>
+                           <p className="mt-2 text-xs text-muted-foreground">
+                             {slot.end ? `Until ${fmtTime12(slot.end)}` : ''}
+                           </p>
                           {isBooked && (
                             <p className="mt-3 inline-flex rounded-full border border-destructive/20 bg-destructive/10 px-2 py-1 text-xs text-destructive">
                               Booked

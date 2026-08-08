@@ -340,7 +340,7 @@ export async function checkPaymentStatus({
   flowId?: string;
   webId?: string;
 }): Promise<VolzixPaymentStatus> {
-  if ((flowId && webId) || (!flowId && !webId)) {
+  if (!flowId && !webId) {
     throw new Error('checkPaymentStatus requires either flowId or webId');
   }
 

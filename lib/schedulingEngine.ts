@@ -18,8 +18,6 @@ function getServiceClient() {
   });
 }
 
-const supabase = getServiceClient();
-
 type AppointmentRow = AppointmentItem & {
   appointment_date?: string | null;
   appointment_time?: string | null;
@@ -38,7 +36,7 @@ interface AvailabilityResult {
 
 /**
  * Generate available time slots for a given date and barber
- * Now returns FULL ISO strings with correct local timezone handling
+ * Now returns FULL ISO strings with correct local timezone handling (Asia/Karachi UTC+5)
  */
 export async function generateAvailableSlots(
   barberId: string,
@@ -56,16 +54,12 @@ export async function generateAvailableSlots(
     return [];
   }
 
-  // Parse the date in local timezone
-  const localDate = new Date(date);
-  localDate.setHours(0, 0, 0, 0); 
+  // Parse the date in Pakistan Standard Time (+05:00)
+  const pktDateObj = new Date(`${date}T00:00:00+05:00`);
 
-const [workStartHour, workStartMin] = workingHours.start.split(':').map(Number);
-const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
-
-  // Get day of week for off days & check specific unavailable dates
-  const dayOfWeekShort = localDate.toLocaleString('en-US', { weekday: 'short' });
-  const dayOfWeekLong = localDate.toLocaleString('en-US', { weekday: 'long' });
+  // Get day of week for off days in PKT
+  const dayOfWeekShort = pktDateObj.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Karachi' });
+  const dayOfWeekLong = pktDateObj.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Karachi' });
   const isOffDay = workingHours.off_days?.some(
     (d: string) => d.toLowerCase() === dayOfWeekShort.toLowerCase() || d.toLowerCase() === dayOfWeekLong.toLowerCase()
   );
@@ -87,18 +81,11 @@ const [workEndHour, workEndMin] = workingHours.end.split(':').map(Number);
     : [{ start_time: workingHours.start, end_time: workingHours.end }];
 
   for (const window of windows) {
-    const [windowStartHour, windowStartMin] = window.start_time.split(':').map(Number);
-    const [windowEndHour, windowEndMin] = window.end_time.split(':').map(Number);
-
-    let currentTime = new Date(localDate);
-    currentTime.setHours(windowStartHour, windowStartMin, 0, 0);
-
-    const endTime = new Date(localDate);
-    endTime.setHours(windowEndHour, windowEndMin, 0, 0);
+    let currentTime = new Date(`${date}T${window.start_time}:00+05:00`);
+    const endTime = new Date(`${date}T${window.end_time}:00+05:00`);
 
     while (currentTime < endTime) {
-      const slotEnd = new Date(currentTime);
-      slotEnd.setMinutes(slotEnd.getMinutes() + serviceDurationMinutes + bufferMinutes);
+      const slotEnd = new Date(currentTime.getTime() + (serviceDurationMinutes + bufferMinutes) * 60000);
 
       if (slotEnd > endTime) break;
 
@@ -155,6 +142,7 @@ export async function insertEmergencyAppointment(
   emergencyAppointment: Omit<AppointmentItem, 'id' | 'created_at' | 'updated_at'>
 ): Promise<{ success: boolean; shiftedAppointments: AppointmentItem[]; error?: string }> {
   try {
+    const supabase = getServiceClient();
     const conflicting = await getConflictingAppointments(
       emergencyAppointment.barber_id,
       emergencyAppointment.start_at,
@@ -242,7 +230,7 @@ export async function insertEmergencyAppointment(
         {
           user_id: shifted.user_id,
           type: 'reschedule',
-          message: `Your appointment has been rescheduled due to an emergency booking. New time: ${new Date(shifted.start_at).toLocaleString()}`,
+          message: `Your appointment has been rescheduled due to an emergency booking. New time: ${new Date(shifted.start_at).toLocaleString('en-US', { timeZone: 'Asia/Karachi' })}`,
           related_appointment_id: shifted.id,
           read: false,
         },
@@ -266,11 +254,13 @@ async function getConflictingAppointments(
   startTime: string,
   endTime: string
 ): Promise<AppointmentItem[]> {
+  const supabase = getServiceClient();
+  const CANCELLED_STATUSES = ['cancelled', 'Cancelled', 'canceled', 'Canceled'];
   const { data, error } = await supabase
     .from('appointments')
     .select('*')
     .or(`barber_id.eq.${barberId},barber_id.is.null`)
-    .neq('status', 'cancelled')
+    .not('status', 'in', `(${CANCELLED_STATUSES.join(',')})`)
     .lt('start_at', endTime)
     .gt('end_at', startTime);
 
@@ -282,6 +272,7 @@ async function getManualAvailabilityWindows(
   barberId: string,
   date: string
 ): Promise<Array<{ start_time: string; end_time: string }>> {
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from('slots')
     .select('start_time, end_time')
@@ -300,24 +291,29 @@ async function getAppointmentsByDateAndBarber(
   barberId: string,
   date: string
 ): Promise<AppointmentItem[]> {
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
+  const supabase = getServiceClient();
+  // Use Pakistan Standard Time (UTC+5) boundaries to avoid server-UTC mismatch
+  const startOfDayPKT = new Date(`${date}T00:00:00+05:00`);
+  const endOfDayPKT = new Date(`${date}T23:59:59.999+05:00`);
 
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
+  const CANCELLED_STATUSES = ['cancelled', 'Cancelled', 'canceled', 'Canceled'];
 
+  // Query by appointment_date field — scoped to this barber
   const dateQuery = await supabase
     .from('appointments')
     .select('*')
-    .neq('status', 'cancelled')
-    .eq('appointment_date', date);
+    .not('status', 'in', `(${CANCELLED_STATUSES.join(',')})`)
+    .eq('appointment_date', date)
+    .eq('barber_id', barberId);
 
+  // Query by timestamp overlap — also scoped to this barber
   const overlapQuery = await supabase
     .from('appointments')
     .select('*')
-    .neq('status', 'cancelled')
-    .lte('start_at', endOfDay.toISOString())
-    .gt('end_at', startOfDay.toISOString());
+    .not('status', 'in', `(${CANCELLED_STATUSES.join(',')})`)
+    .lte('start_at', endOfDayPKT.toISOString())
+    .gt('end_at', startOfDayPKT.toISOString())
+    .eq('barber_id', barberId);
 
   if (dateQuery.error || overlapQuery.error) return [];
 
@@ -326,12 +322,22 @@ async function getAppointmentsByDateAndBarber(
     new Map(allAppointments.map((appt) => [appt.id, appt])).values(),
   );
 
-  return uniqueAppointments.filter(
-    (appt) => !appt.barber_id || appt.barber_id === barberId,
-  );
+  // Exclude pending appointments that have no confirmed payment — they haven't
+  // actually secured the slot yet.
+  return uniqueAppointments.filter((appt) => {
+    const normalizedStatus = String(appt.status || '').trim().toLowerCase();
+    if (normalizedStatus === 'pending') {
+      // Only block if payment is confirmed
+      const payStatus = String(appt.payment_status || '').trim().toLowerCase();
+      const confirmedStatuses = ['completed', 'complete', 'success', 'paid', 'settled', 'confirmed', 'succeeded'];
+      return confirmedStatuses.includes(payStatus);
+    }
+    return true;
+  });
 }
 
 async function getBarberProfile(barberId: string): Promise<BarberProfile | null> {
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from('barbers')
     .select('*')
@@ -343,6 +349,7 @@ async function getBarberProfile(barberId: string): Promise<BarberProfile | null>
 }
 
 async function getService(serviceId: string): Promise<ServiceItem | null> {
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from('services')
     .select('*')
@@ -357,24 +364,21 @@ function isTimeInBreak(
   time: Date,
   breaks: Array<{ start: string; end: string }>
 ): boolean {
-  const timeStr = time.toTimeString().slice(0, 5);
-  return breaks.some((b) => timeStr >= b.start && timeStr < b.end);
+  // Convert time to PKT HH:MM string for break comparison
+  const pktTimeStr = time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Karachi' });
+  return breaks.some((b) => pktTimeStr >= b.start && pktTimeStr < b.end);
 }
 
 function buildLocalIsoTimestamp(date: string, time: string): string {
   // Server-side: interpret `date` + `time` as Pakistan local time (UTC+05:00)
-  // and produce a canonical ISO string in UTC. This avoids using the
-  // server runtime local timezone which may be UTC and would produce
-  // incorrectly-shifted timestamps when running in server environments.
-  // Create an ISO string with explicit +05:00 offset so Date parsing
-  // yields the correct UTC instant.
+  // and produce a canonical ISO string in UTC.
   const isoWithOffset = `${date}T${time}:00+05:00`;
   const parsed = new Date(isoWithOffset);
   return parsed.toISOString();
 }
 
 /**
- * Get available dates for the next N days
+ * Get available dates for the next N days (computed in Asia/Karachi timezone)
  */
 export async function getAvailableDates(
   barberId: string,
@@ -382,20 +386,26 @@ export async function getAvailableDates(
   daysAhead: number = 30
 ): Promise<string[]> {
   const availableDates: string[] = [];
-  const today = new Date();
+  const now = new Date();
+  const pktFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi' });
+  const todayPktStr = pktFormatter.format(now); // e.g. "2026-08-08"
+
+  const [year, month, day] = todayPktStr.split('-').map(Number);
+  const baseDate = new Date(Date.UTC(year, month - 1, day));
 
   for (let i = 1; i <= daysAhead; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() + i);
+    const nextDate = new Date(baseDate);
+    nextDate.setUTCDate(baseDate.getUTCDate() + i);
+    const dateStr = nextDate.toISOString().split('T')[0];
 
     const slots = await generateAvailableSlots(
       barberId,
-      date.toISOString().split('T')[0],
+      dateStr,
       serviceDurationMinutes
     );
 
     if (slots.some((s) => s.available)) {
-      availableDates.push(date.toISOString().split('T')[0]);
+      availableDates.push(dateStr);
     }
   }
 

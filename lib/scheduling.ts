@@ -128,12 +128,16 @@ export function generateAvailabilitySlots(
 
   const uniqueSlots = ranges
     .filter((item, index) => index === 0 || item.start !== ranges[index - 1].start)
-    .map((item) => ({
-      label: minutesToLabel(item.start),
-      startAt: `${dateKey}T${String(Math.floor(item.start / 60)).padStart(2, '0')}:${String(item.start % 60).padStart(2, '0')}:00Z`,
-      endAt: `${dateKey}T${String(Math.floor(item.end / 60)).padStart(2, '0')}:${String(item.end % 60).padStart(2, '0')}:00Z`,
-      available: true,
-    }));
+    .map((item) => {
+      const startTimeStr = `${String(Math.floor(item.start / 60)).padStart(2, '0')}:${String(item.start % 60).padStart(2, '0')}:00`;
+      const endTimeStr = `${String(Math.floor(item.end / 60)).padStart(2, '0')}:${String(item.end % 60).padStart(2, '0')}:00`;
+      return {
+        label: minutesToLabel(item.start),
+        startAt: new Date(`${dateKey}T${startTimeStr}+05:00`).toISOString(),
+        endAt: new Date(`${dateKey}T${endTimeStr}+05:00`).toISOString(),
+        available: true,
+      };
+    });
 
   return uniqueSlots;
 }
