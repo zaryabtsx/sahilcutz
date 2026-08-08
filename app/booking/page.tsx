@@ -115,6 +115,16 @@ function buildLocalIsoTimestamp(date: string, time: string): string {
   return new Date(utcMillis).toISOString();
 }
 
+// Same fixed Asia/Karachi (UTC+5) offset as buildLocalIsoTimestamp, but returns a
+// Date object instead of an ISO string. Used anywhere we need to do local-time
+// arithmetic (slot blocking, "is this in the past" checks) without depending on
+// the browser/server's system timezone.
+function buildLocalDate(date: string, time: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hours, minutes] = time.slice(0, 5).split(':').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, hours - 5, minutes, 0));
+}
+
 function normalizeAppointmentTime(value: string): string {
   const raw = String(value || '').trim();
   const timePortion = raw.includes('T') ? raw.split('T').pop() ?? raw : raw;
@@ -228,10 +238,13 @@ function computeAvailableSlots(
         is_available: true,
       } as AvailWindow];
 
-  const selectedDayStart = new Date(`${selectedDate}T00:00:00`);
-  const selectedDayEnd = new Date(`${selectedDate}T23:59:59.999`);
+  // Fixed Asia/Karachi day boundaries — do not depend on the browser/server's
+  // system timezone (previously: new Date(`${selectedDate}T00:00:00`), which
+  // is interpreted in whatever timezone the running environment happens to be in).
+  const selectedDayStart = buildLocalDate(selectedDate, '00:00');
+  const selectedDayEnd = new Date(buildLocalDate(selectedDate, '23:59').getTime() + 59999);
 
- const blockedRanges = booked
+  const blockedRanges = booked
     .filter(shouldBlockAppointment)
     .filter(b => !b.barber_id || b.barber_id === barberId)
     .map((b) => {
@@ -241,7 +254,9 @@ function computeAvailableSlots(
 
       if (b.appointment_date && b.appointment_time) {
         const timeStr = normalizeAppointmentTime(b.appointment_time);
-        const localStart = new Date(`${b.appointment_date}T${timeStr}:00`);
+        // Fixed Asia/Karachi offset instead of naive `new Date(...)` parsing,
+        // which silently used the running environment's local timezone.
+        const localStart = buildLocalDate(b.appointment_date, timeStr);
         const duration = Number(b.duration_minutes);
         if (!Number.isNaN(localStart.getTime()) && !Number.isNaN(duration) && duration > 0) {
           startAt = localStart;
@@ -294,10 +309,14 @@ function computeAvailableSlots(
     console.debug('Blocked ranges computed', selectedDate, barberId, blockedRanges);
   }
 
-  const nowMins =
-    isoDate(new Date()) === selectedDate
-      ? new Date().getHours() * 60 + new Date().getMinutes()
-      : 0;
+  // "Now" in Asia/Karachi, computed against the same fixed offset used above —
+  // not the browser's local clock reading.
+  const nowUtcMillis = Date.now();
+  const nowKarachiMinutesOfDay = Math.floor(
+    ((nowUtcMillis + 5 * 60 * 60 * 1000) % (24 * 60 * 60 * 1000)) / 60000
+  );
+  const todayKarachi = new Date(nowUtcMillis + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const nowMins = todayKarachi === selectedDate ? nowKarachiMinutesOfDay : 0;
 
   const slots: ComputedSlot[] = [];
   const slotStep = durationMins;
