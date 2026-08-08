@@ -26,10 +26,7 @@ export function formatDateTime(date: Date | string): string {
 }
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount);
+  return `PKR ${Number(amount || 0).toLocaleString()}`;
 }
 
 export function calculateDuration(
@@ -65,7 +62,7 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
 export function getInitials(name: string): string {
@@ -140,10 +137,13 @@ export function getWeeklyStats(appointments: any[]) {
   };
 
   appointments.forEach((a) => {
+    if (!a?.start_at) return;
     const aptDate = new Date(a.start_at);
-    if (aptDate >= weekStart && aptDate <= today) {
+    if (!Number.isNaN(aptDate.getTime()) && aptDate >= weekStart && aptDate <= today) {
       const dayName = aptDate.toLocaleDateString('en-US', { weekday: 'long' });
-      weekStats[dayName]++;
+      if (dayName in weekStats) {
+        weekStats[dayName]++;
+      }
     }
   });
 

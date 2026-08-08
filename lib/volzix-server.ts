@@ -199,9 +199,8 @@ export async function ensureAppointmentForPaidPayment(supabase: ServerClient, pa
   ]);
 
   const duration = Number(service?.duration_minutes || 30);
-  const [year, month, day] = payment.booking_date.split('-').map(Number);
-  const [hours, minutes] = payment.booking_time.split(':').map(Number);
-  const startAt = new Date(year, month - 1, day, hours, minutes, 0);
+  const timePortion = String(payment.booking_time || '00:00').slice(0, 5);
+  const startAt = new Date(`${payment.booking_date}T${timePortion}:00+05:00`);
   const endAt = new Date(startAt.getTime() + duration * 60 * 1000);
 
   const { data: appointment, error } = await supabase

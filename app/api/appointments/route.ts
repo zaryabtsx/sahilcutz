@@ -69,7 +69,7 @@ function getServerClient() {
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function shouldSendBookingEmail(status: unknown) {
@@ -229,7 +229,7 @@ async function sendBookingEmails({
           : service?.price || 0,
     };
 
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@sahilcutzz.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@sahilcutz.com';
     const emailPromises = [];
 
     if (customerEmail && shouldSendBookingEmail(appointment.status)) {
@@ -280,7 +280,7 @@ export async function GET(request: NextRequest) {
       queryBuilder = queryBuilder.eq('status', status);
     }
     if (excludeCancelled) {
-      queryBuilder = queryBuilder.not('status', 'in', '(Cancelled,cancelled)');
+      queryBuilder = queryBuilder.not('status', 'in', '(Cancelled,cancelled,Canceled,canceled)');
     }
 
     if (appointmentDate && rangeStart && rangeEnd) {
@@ -475,14 +475,23 @@ export async function POST(request: NextRequest) {
       .from('appointments')
       .select('id,status,start_at,end_at')
       .eq('barber_id', appointmentPayload.barber_id)
-      .neq('status', 'cancelled')
+      .not('status', 'in', '(cancelled,Cancelled,canceled,Canceled)')
       .lt('start_at', requestedEndIso)
       .gt('end_at', requestedStartIso);
 
     if (conflictError) {
       console.warn('Could not check appointment conflicts:', conflictError.message);
     } else if (Array.isArray(conflicts) && conflicts.length > 0) {
-      return NextResponse.json({ error: 'Selected time slot is no longer available' }, { status: 409 });
+      // Filter out pending appointments with no confirmed payment — they haven't secured the slot
+      const blockingConflicts = conflicts.filter((c) => {
+        const status = String(c.status || '').trim().toLowerCase();
+        // pending without payment should not block
+        if (status === 'pending') return false;
+        return true;
+      });
+      if (blockingConflicts.length > 0) {
+        return NextResponse.json({ error: 'Selected time slot is no longer available' }, { status: 409 });
+      }
     }
 
     // Remove fields not present on the appointments table (avoid schema cache errors)
@@ -551,6 +560,11 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const adminToken = request.headers.get('x-admin-token');
+    if (adminToken !== 'admin_verified') {
+      return NextResponse.json({ error: 'Unauthorized: admin access required' }, { status: 401 });
+    }
+
     const supabase = getServerClient();
     const body = await request.json();
     const { id, ...updateData } = body;
