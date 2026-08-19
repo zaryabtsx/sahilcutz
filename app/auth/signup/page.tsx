@@ -6,9 +6,15 @@
 
 import { useRouter } from 'next/navigation';
 import { AuthCard } from '@/components/AuthCard';
+import { getSession } from '@/lib/auth';
 
 export default function SignupPage() {
   const router = useRouter();
+
+  const handleSuccess = () => {
+    const session = getSession();
+    router.push(session?.user.role === 'admin' ? '/admin/dashboard' : '/customer/dashboard');
+  };
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-16 relative overflow-hidden">
@@ -18,7 +24,7 @@ export default function SignupPage() {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        <AuthCard mode="signup" />
+        <AuthCard mode="signup" onSuccess={handleSuccess} />
       </div>
     </div>
   );

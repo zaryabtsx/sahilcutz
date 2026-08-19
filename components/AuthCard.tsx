@@ -86,7 +86,7 @@ export function AuthCard({ mode, onSuccess }: AuthCardProps) {
           throw new Error(result.message);
         }
 
-        setSuccessMessage('Account created successfully. Please check your email to verify your account.');
+        setSuccessMessage('Account created successfully. Redirecting…');
         onSuccess?.();
         return;
       }

@@ -262,20 +262,10 @@ export async function signUp(payload: {
   phone: string;
   password: string;
   role: UserRole;
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<{ success: boolean; message: string; role?: UserRole }> {
 
   if (hasSupabaseConfig()) {
-    const { data: existingProfiles } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', payload.email)
-      .limit(1);
-
-    if (existingProfiles && existingProfiles.length > 0) {
-      return { success: false, message: 'This email is already registered. Please log in instead.' };
-    }
-
-    const response = await supabase.auth.signUp({
+          const response = await supabase.auth.signUp({
       email: payload.email,
       password: payload.password,
       options: {
@@ -283,7 +273,16 @@ export async function signUp(payload: {
       },
     });
 
+    console.log('Signup response:', { 
+      hasError: !!response.error, 
+      error: response.error?.message,
+      userId: response.data.user?.id,
+      hasSession: !!response.data.session,
+      sessionToken: !!response.data.session?.access_token,
+    });
+
     if (response.error) {
+      console.error('Signup error from Supabase Auth:', response.error.message, response.error);
       const message = response.error.message?.toLowerCase() || '';
       const duplicateEmailPatterns = [
         'already registered',
@@ -312,6 +311,7 @@ export async function signUp(payload: {
 
     const userId = response.data.user?.id;
     if (!userId) {
+      console.error('Signup: No user ID returned');
       return { success: false, message: 'Unable to create account. Please try again.' };
     }
 
@@ -326,21 +326,40 @@ export async function signUp(payload: {
       updated_at: new Date().toISOString(),
     };
 
+    let session = response.data.session;
+
+    if (!session?.access_token) {
+      console.warn('Signup returned no session. Attempting automatic sign-in.');
+      const loginResponse = await supabase.auth.signInWithPassword({
+        email: payload.email,
+        password: payload.password,
+      });
+
+      if (loginResponse.error || !loginResponse.data.session) {
+        return {
+          success: false,
+          message: loginResponse.error?.message || 'Unable to sign in after creating the account. Please try again.',
+        };
+      }
+
+      session = loginResponse.data.session;
+    }
+
     const profileSyncResult = await syncProfileFromAuth(profile);
+    console.log('Profile sync result:', profileSyncResult);
     if (!profileSyncResult.success) {
       console.warn('Profile sync warning:', profileSyncResult.message);
     }
 
-    if (response.data.session?.access_token) {
-      setSession({
-        user: profile,
-        token: response.data.session.access_token,
-      });
-    }
+    setSession({
+      user: profile,
+      token: session.access_token,
+    });
 
     return {
       success: true,
       message: 'Account created successfully.',
+      role: payload.role,
     };
   }
 
