@@ -68,12 +68,12 @@ export default function LoginPage() {
               Forgot password?
             </Link>
           </p>
-          <p>
+          {/* <p>
             Admin?{' '}
             <Link href="/admin/login" className="font-semibold text-red-600 hover:text-red-500 underline-offset-4 hover:underline">
               Go to admin panel
             </Link>
-          </p>
+          </p> */}
         </div>
       </div>
     </div>

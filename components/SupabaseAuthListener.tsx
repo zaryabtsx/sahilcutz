@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { clearSession, setSession } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
@@ -33,6 +33,7 @@ function normalizeAuthSession(supabaseSession: Awaited<ReturnType<typeof supabas
 
 export function SupabaseAuthListener() {
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -47,7 +48,9 @@ export function SupabaseAuthListener() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         clearSession();
-        router.push("/auth/login");
+        if (!pathname.startsWith("/admin")) {
+          router.push("/auth/login");
+        }
         return;
       }
 
@@ -55,7 +58,7 @@ export function SupabaseAuthListener() {
     });
 
     return () => listener.subscription.unsubscribe();
-  }, [router]);
+  }, [pathname, router]);
 
   return null;
 }

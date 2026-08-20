@@ -265,7 +265,7 @@ export async function signUp(payload: {
 }): Promise<{ success: boolean; message: string; role?: UserRole }> {
 
   if (hasSupabaseConfig()) {
-          const response = await supabase.auth.signUp({
+    const response = await supabase.auth.signUp({
       email: payload.email,
       password: payload.password,
       options: {
@@ -299,10 +299,15 @@ export async function signUp(payload: {
         return { success: false, message: 'This email is already registered. Please log in instead.' };
       }
 
-      if (response.error.status === 429 || message.includes('email rate limit exceeded') || message.includes('too many requests')) {
+      if (
+        response.error.status === 429 ||
+        message.includes('email rate limit exceeded') ||
+        message.includes('too many requests') ||
+        message.includes('for security purposes')
+      ) {
         return {
           success: false,
-          message: 'Too many signup attempts. Please wait a minute and try again.',
+          message: 'Please wait about one minute before trying to register again.',
         };
       }
 

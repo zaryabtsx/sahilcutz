@@ -75,7 +75,7 @@ export function AdminLoginForm() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Sahilcutz1s@gmail.com"
+              placeholder=""
               disabled={loading}
               className="w-full px-4 py-3 bg-muted border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               required
@@ -92,7 +92,7 @@ export function AdminLoginForm() {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder=""
                 disabled={loading}
                 className="w-full px-4 py-3 bg-muted border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed pr-12"
                 required
