@@ -48,7 +48,7 @@ export function SupabaseAuthListener() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         clearSession();
-        if (!pathname.startsWith("/admin")) {
+        if (!pathname.startsWith("/admin") && !pathname.startsWith("/auth")) {
           router.push("/auth/login");
         }
         return;
