@@ -7,22 +7,25 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import { isAuthenticated, getSession, clearSession } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { isLastTwoDaysOfMonth } from '@/lib/scheduling';
 import type { UserProfile } from '@/lib/types';
-import { Bell, Clock, Heart, ArrowRight, LogOut, Loader2, RefreshCw, XCircle, CalendarDays } from 'lucide-react';
+import { Bell, Clock, Heart, ArrowRight, LogOut, Loader2, RefreshCw, XCircle, CalendarDays, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 import { initialBarbers, initialNotifications } from '@/lib/mockData';
 
 const statusStyles: Record<string, string> = {
   upcoming:   'bg-primary/10 text-primary',
   confirmed:  'bg-primary/10 text-primary',
+  booked:     'bg-primary/10 text-primary',
   pending:    'bg-accent/10 text-accent',
   completed:  'bg-muted/10 text-muted-foreground',
   cancelled:  'bg-destructive/10 text-destructive',
+  rescheduled: 'bg-muted/10 text-muted-foreground',
   expired:    'bg-muted/10 text-muted-foreground',
   emergency:  'bg-red-500/10 text-red-500',
   shifted:    'bg-yellow-500/10 text-yellow-500',
 };
 
-const ACTIVE_STATUSES = new Set(['upcoming', 'pending', 'confirmed', 'in progress']);
+const ACTIVE_STATUSES = new Set(['upcoming', 'pending', 'confirmed', 'booked', 'in progress']);
 
 interface AppointmentRow {
   id:               string;
@@ -40,7 +43,17 @@ interface AppointmentRow {
   status:           string;
   created_at:       string;
   services?:        { name: string; price: number } | null;
-  barbers?:         { name: string } | null;
+  barbers?:         { name: string; working_hours?: { start: string; end: string; breaks?: { start: string; end: string }[]; off_days?: string[]; unavailable_dates?: string[] } | null } | null;
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function dateKey(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }
 
 function normalizedStatus(status?: string | null): string {
@@ -49,7 +62,7 @@ function normalizedStatus(status?: string | null): string {
 
 function displayStatus(appt: AppointmentRow): string {
   const status = normalizedStatus(appt.status);
-  if (status === 'completed' || status === 'cancelled') return status;
+  if (status === 'completed' || status === 'cancelled' || status === 'rescheduled') return status;
   return new Date(appt.end_at).getTime() < Date.now() ? 'expired' : status;
 }
 
@@ -122,6 +135,9 @@ export default function CustomerDashboardPage() {
   const [rescheduleSlots, setRescheduleSlots] = useState<RescheduleSlot[]>([]);
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [rescheduleError, setRescheduleError] = useState('');
+  const today = useMemo(() => new Date(), []);
+  const [calYear, setCalYear] = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
 
   // ── Auth guard ──────────────────────────────────────────────
   useEffect(() => {
@@ -238,9 +254,24 @@ export default function CustomerDashboardPage() {
 
   const openReschedule = (appt: AppointmentRow) => {
     setRescheduleTarget(appt);
-    setRescheduleDate(appt.appointment_date || getLocalDateFromTimestamp(appt.start_at) || new Date(appt.start_at).toISOString().slice(0, 10));
+    setRescheduleDate('');
     setRescheduleTime('');
     setRescheduleError('');
+    setCalYear(today.getFullYear());
+    setCalMonth(today.getMonth());
+  };
+
+  const calDays = useMemo(() => {
+    const firstDay = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    return [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)];
+  }, [calMonth, calYear]);
+
+  const pickRescheduleDate = (day: number) => {
+    const selected = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    if (selected <= dateKey(today)) return;
+    setRescheduleDate(selected);
+    setRescheduleTime('');
   };
 
   const cancelAppointment = async (appt: AppointmentRow) => {
@@ -328,7 +359,7 @@ export default function CustomerDashboardPage() {
 
   const past = useMemo(
     () => appointments
-      .filter((appt) => ['completed', 'cancelled', 'expired'].includes(displayStatus(appt)))
+      .filter((appt) => ['completed', 'cancelled', 'expired', 'rescheduled'].includes(displayStatus(appt)))
       .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime()),
     [appointments],
   );
@@ -678,18 +709,82 @@ export default function CustomerDashboardPage() {
             </div>
 
             <div className="mt-6 space-y-4">
-              <label className="block text-sm font-semibold text-foreground">
-                <span className="mb-2 flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-primary" /> Choose another date
-                </span>
-                <input
-                  type="date"
-                  min={new Date().toISOString().slice(0, 10)}
-                  value={rescheduleDate}
-                  onChange={(event) => setRescheduleDate(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-border bg-background px-4 py-3 text-foreground focus:outline-none focus:border-primary"
-                />
-              </label>
+              <div className="rounded-[32px] border border-border bg-card/90 p-6 shadow-2xl">
+                <p className="text-xs uppercase tracking-[0.35em] text-primary">Choose another date</p>
+                <div className="mt-6">
+                  <div className="mb-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => calMonth === 0 ? (setCalMonth(11), setCalYear((year) => year - 1)) : setCalMonth((month) => month - 1)}
+                      className="rounded-xl border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <p className="font-bold text-foreground">{MONTHS[calMonth]} {calYear}</p>
+                    <button
+                      type="button"
+                      onClick={() => calMonth === 11 ? (setCalMonth(0), setCalYear((year) => year + 1)) : setCalMonth((month) => month + 1)}
+                      className="rounded-xl border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="mb-2 grid grid-cols-7">
+                    {WEEKDAYS.map((day) => <div key={day} className="py-1 text-center text-[10px] uppercase tracking-widest text-muted-foreground">{day}</div>)}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {calDays.map((day, index) => {
+                      if (day === null) return <div key={`empty-${index}`} />;
+                      const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      const todayStr = dateKey(today);
+                      const isPast = dateStr <= todayStr;
+                      const isSameDay = dateStr === (rescheduleTarget.appointment_date || getLocalDateFromTimestamp(rescheduleTarget.start_at));
+                      const isLastTwo = isLastTwoDaysOfMonth(dateStr);
+                      const workingHours = rescheduleTarget.barbers?.working_hours;
+                      const dateObject = new Date(`${dateStr}T00:00:00`);
+                      const weekdayShort = dateObject.toLocaleDateString('en-US', { weekday: 'short' });
+                      const weekdayLong = dateObject.toLocaleDateString('en-US', { weekday: 'long' });
+                      const isUnavailable = Boolean(
+                        workingHours?.off_days?.some((off) => off.toLowerCase() === weekdayShort.toLowerCase() || off.toLowerCase() === weekdayLong.toLowerCase()) ||
+                        workingHours?.unavailable_dates?.some((blockedDate) => blockedDate.slice(0, 10) === dateStr),
+                      );
+                      const isSelected = dateStr === rescheduleDate;
+                      const isToday = dateStr === todayStr;
+
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => !isPast && !isSameDay && !isLastTwo && !isUnavailable && pickRescheduleDate(day)}
+                          disabled={isPast || isSameDay || isLastTwo || isUnavailable}
+                          title={isSameDay ? 'Choose a different date' : isUnavailable ? 'Barber unavailable on this date' : ''}
+                          className={`aspect-square rounded-xl text-sm font-semibold transition-all ${
+                            isUnavailable || isSameDay
+                              ? 'cursor-not-allowed bg-red-500/5 text-red-400/40 line-through'
+                              : isLastTwo
+                                ? 'cursor-not-allowed bg-muted/40 text-muted-foreground/30'
+                                : isPast
+                                  ? 'cursor-not-allowed text-muted-foreground/30'
+                                  : isSelected
+                                    ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
+                                    : isToday
+                                      ? 'border border-primary/40 text-primary'
+                                      : 'text-foreground hover:bg-background/80'
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {rescheduleDate && (
+                  <div className="mt-4 flex items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
+                    <CalendarDays className="h-4 w-4 flex-shrink-0" />
+                    {new Date(`${rescheduleDate}T00:00:00`).toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  </div>
+                )}
+              </div>
 
               <div className="flex items-center justify-between gap-4">
                 <p className="text-sm font-semibold text-foreground">Available times</p>
@@ -705,7 +800,7 @@ export default function CustomerDashboardPage() {
                   {rescheduleError}
                 </div>
               ) : rescheduleSlots.length > 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="mt-6 max-h-[380px] space-y-2 overflow-y-auto pr-1">
                   {rescheduleSlots
                     .filter((slot): slot is RescheduleSlot =>
                       Boolean(slot) && typeof slot.start === 'string' && typeof slot.end === 'string',
@@ -718,29 +813,35 @@ export default function CustomerDashboardPage() {
                           key={slot.start || `slot-${index}`}
                           type="button"
                           disabled={isBooked}
-                          onClick={() => slot.start && setRescheduleTime(slot.start)}
-                          className={`rounded-3xl border px-4 py-4 text-left text-sm font-semibold transition-all shadow-sm ${
+                          onClick={() => !isBooked && slot.start && setRescheduleTime(slot.start)}
+                          className={`w-full rounded-3xl border p-4 text-left transition-all ${
                             isBooked
-                              ? 'cursor-not-allowed border-border/60 bg-muted/10 text-muted-foreground'
+                              ? 'cursor-not-allowed border-border/60 bg-muted/40 text-muted-foreground'
                               : isSelected
-                                ? 'border-primary bg-primary/10 text-foreground shadow-outline-primary'
-                                : 'border-border bg-background/95 text-foreground hover:border-primary/40 hover:shadow-md'
+                                ? 'border-primary bg-primary/10 text-foreground shadow-md shadow-primary/10 hover:border-primary/40'
+                                : 'border-border bg-background/90 text-foreground hover:border-primary/40'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
-                             <span className="text-base font-semibold text-foreground">
-                               {slot.start ? fmtTime12(slot.start) : 'Invalid slot'}
-                             </span>
-                            {isSelected && <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-bold uppercase text-primary">Selected</span>}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold">
+                                {slot.start ? fmtTime12(slot.start) : 'Invalid slot'}
+                                <span className="mx-1.5 font-normal">→</span>
+                                {slot.end ? fmtTime12(slot.end) : ''}
+                                </p>
+                                {isBooked && (
+                                  <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                    Booked
+                                  </span>
+                                )}
+                              </div>
+                              {rescheduleTarget.barbers?.name && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">with {rescheduleTarget.barbers.name}</p>
+                              )}
+                            </div>
+                            {isSelected && !isBooked && <CheckCircle className="h-5 w-5 flex-shrink-0 text-primary" />}
                           </div>
-                           <p className="mt-2 text-xs text-muted-foreground">
-                             {slot.end ? `Until ${fmtTime12(slot.end)}` : ''}
-                           </p>
-                          {isBooked && (
-                            <p className="mt-3 inline-flex rounded-full border border-destructive/20 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-                              Booked
-                            </p>
-                          )}
                         </button>
                       );
                     })}

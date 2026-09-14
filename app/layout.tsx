@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { SupabaseAuthListener } from "@/components/SupabaseAuthListener";
+import { WhatsAppButton } from "@/components/WhatsAppButton";
 // import { WelcomePopup } from "@/components/WelcomePopup";
 
 const geistSans = Geist({
@@ -38,6 +39,7 @@ export default function RootLayout({
           <SupabaseAuthListener />
           {/* <WelcomePopup /> */}
           {children}
+          <WhatsAppButton />
         </ThemeProvider>
       </body>
     </html>

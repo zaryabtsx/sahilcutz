@@ -129,7 +129,7 @@ function isPaymentConfirmed(value?: string | null): boolean {
 
 function shouldBlockAppointment(appointment: BookedAppt): boolean {
   const normalizedStatus = String(appointment.status || '').trim().toLowerCase();
-  if (['cancelled', 'canceled'].includes(normalizedStatus)) return false;
+  if (['cancelled', 'canceled', 'rescheduled'].includes(normalizedStatus)) return false;
   if (normalizedStatus === 'pending') return isPaymentConfirmed(appointment.payment_status);
   return true;
 }

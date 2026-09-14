@@ -208,14 +208,14 @@ export function Navbar() {
                   </>
                 ) : (
                   <>
-                    <Link href="/auth/login">
+                    <Link href="/auth/signup">
                       <motion.button
                         whileHover={{ scale: 1.04 }}
                         whileTap={{ scale: 0.96 }}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm font-bold text-foreground hover:bg-card/50 transition-colors"
                       >
                         <LogIn className="w-4 h-4" />
-                        Login
+                        Sign Up
                       </motion.button>
                     </Link>
                     <Link href="/customer/dashboard">
@@ -476,14 +476,14 @@ export function Navbar() {
                     </motion.a>
 
                     <motion.a
-                      href="/auth/login"
+                      href="/auth/signup"
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.37, duration: 0.32 }}
                       className="flex items-center justify-center gap-3 px-6 py-4 rounded-lg border border-border/60 font-bold text-base text-foreground hover:bg-card transition-colors"
                     >
                       <LogIn className="w-5 h-5" />
-                      Customer Login
+                      Customer Sign Up
                     </motion.a>
 
                     <motion.a

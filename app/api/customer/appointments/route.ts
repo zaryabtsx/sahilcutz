@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
         ? supabase.from('services').select('id, name, price').in('id', serviceIds)
         : Promise.resolve({ data: [], error: null }),
       barberIds.length
-        ? supabase.from('barbers').select('id, name').in('id', barberIds)
+        ? supabase.from('barbers').select('id, name, working_hours').in('id', barberIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -159,12 +159,27 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid appointment time' }, { status: 400 });
       }
 
+      const appointmentDate = typeof body?.appointment_date === 'string' && body.appointment_date
+        ? body.appointment_date
+        : `${requestedStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })}`;
+      const originalDate = existingAppointment.appointment_date ||
+        new Date(existingAppointment.start_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+      const todayInPakistan = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+
+      if (appointmentDate <= todayInPakistan || appointmentDate === originalDate) {
+        return NextResponse.json({ error: 'Please choose a future date different from the current appointment date.' }, { status: 400 });
+      }
+
+      if (requestedEnd <= requestedStart || requestedStart <= new Date()) {
+        return NextResponse.json({ error: 'Please choose a future appointment time.' }, { status: 400 });
+      }
+
       const { data: conflictingAppointments, error: conflictError } = await supabase
         .from('appointments')
         .select('id')
         .eq('barber_id', existingAppointment.barber_id)
         .neq('id', appointmentId)
-        .not('status', 'in', '(cancelled,Cancelled,canceled,Canceled,completed,Completed)')
+        .not('status', 'in', '(cancelled,Cancelled,canceled,Canceled,completed,Completed,rescheduled,Rescheduled)')
         .lt('start_at', requestedEnd.toISOString())
         .gt('end_at', requestedStart.toISOString());
 
@@ -176,24 +191,26 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: 'That time is no longer available. Please choose another slot.' }, { status: 409 });
       }
 
-      const appointmentDate = typeof body?.appointment_date === 'string' && body.appointment_date
-        ? body.appointment_date
-        : `${requestedStart.getUTCFullYear()}-${String(requestedStart.getUTCMonth() + 1).padStart(2, '0')}-${String(requestedStart.getUTCDate()).padStart(2, '0')}`;
       const appointmentTime = typeof body?.appointment_time === 'string' && body.appointment_time
         ? body.appointment_time
         : `${String(requestedStart.getUTCHours()).padStart(2, '0')}:${String(requestedStart.getUTCMinutes()).padStart(2, '0')}`;
 
       const { data, error } = await supabase
         .from('appointments')
-        .update({
+        .insert({
+          user_id: existingAppointment.user_id,
+          barber_id: existingAppointment.barber_id,
+          service_id: existingAppointment.service_id,
           start_at: requestedStart.toISOString(),
           end_at: requestedEnd.toISOString(),
           duration_minutes: Number(durationMinutes || existingAppointment.duration_minutes || 0),
           appointment_date: appointmentDate,
           appointment_time: appointmentTime,
-          status: existingAppointment.status === 'cancelled' ? 'confirmed' : existingAppointment.status,
+          status: 'Booked',
+          is_emergency: existingAppointment.is_emergency || false,
+          payment_id: existingAppointment.payment_id || null,
+          notes: existingAppointment.notes || null,
         })
-        .eq('id', appointmentId)
         .select()
         .single();
 
@@ -201,12 +218,25 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
 
+      const { error: historyError } = await supabase
+        .from('appointments')
+        .update({
+          status: 'Rescheduled',
+        })
+        .eq('id', appointmentId)
+        .eq('user_id', existingAppointment.user_id);
+
+      if (historyError) {
+        await supabase.from('appointments').delete().eq('id', data.id);
+        return NextResponse.json({ error: historyError.message }, { status: 400 });
+      }
+
       await supabase.from('notifications').insert([
         {
           user_id: existingAppointment.user_id,
           type: 'reschedule',
           message: `Your appointment has been rescheduled to ${requestedStart.toLocaleString('en-US', { timeZone: 'Asia/Karachi' })}.`,
-          related_appointment_id: appointmentId,
+          related_appointment_id: data.id,
           read: false,
         },
       ]);

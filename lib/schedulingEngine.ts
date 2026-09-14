@@ -255,7 +255,7 @@ async function getConflictingAppointments(
   endTime: string
 ): Promise<AppointmentItem[]> {
   const supabase = getServiceClient();
-  const CANCELLED_STATUSES = ['cancelled', 'Cancelled', 'canceled', 'Canceled'];
+  const CANCELLED_STATUSES = ['cancelled', 'Cancelled', 'canceled', 'Canceled', 'rescheduled', 'Rescheduled'];
   const { data, error } = await supabase
     .from('appointments')
     .select('*')
@@ -296,7 +296,7 @@ async function getAppointmentsByDateAndBarber(
   const startOfDayPKT = new Date(`${date}T00:00:00+05:00`);
   const endOfDayPKT = new Date(`${date}T23:59:59.999+05:00`);
 
-  const CANCELLED_STATUSES = ['cancelled', 'Cancelled', 'canceled', 'Canceled'];
+  const CANCELLED_STATUSES = ['cancelled', 'Cancelled', 'canceled', 'Canceled', 'rescheduled', 'Rescheduled'];
 
   // Query by appointment_date field — scoped to this barber
   const dateQuery = await supabase

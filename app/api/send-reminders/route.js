@@ -55,13 +55,13 @@ export async function GET(request) {
 
     const supabase = getServerClient();
     const now = new Date();
-    const next24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const reminderCutoff = new Date(now.getTime() + 6 * 60 * 60 * 1000);
 
     const { data: appointments, error: appointmentsError } = await supabase
       .from('appointments')
       .select('id, user_id, barber_id, service_id, start_at, end_at, status, reminder_sent')
       .gte('start_at', now.toISOString())
-      .lte('start_at', next24Hours.toISOString())
+      .lte('start_at', reminderCutoff.toISOString())
       .or('reminder_sent.is.false,reminder_sent.is.null')
       .order('start_at', { ascending: true });
 
@@ -121,9 +121,26 @@ export async function GET(request) {
         continue;
       }
 
+      // Claim the reminder before sending so overlapping cron runs cannot send duplicates.
+      const { data: claimedReminder, error: claimError } = await supabase
+        .from('appointments')
+        .update({ reminder_sent: true })
+        .eq('id', appointment.id)
+        .or('reminder_sent.eq.false,reminder_sent.is.null')
+        .select('id')
+        .maybeSingle();
+
+      if (claimError) {
+        failed += 1;
+        console.error(`Unable to claim reminder for appointment ${appointment.id}: ${claimError.message}`);
+        continue;
+      }
+
+      if (!claimedReminder) continue;
+
       const result = await sendMail({
         to: customer.email,
-        subject: 'Your Sahil Cutz appointment is tomorrow',
+        subject: 'Your Sahil Cutz appointment is in 6 hours',
         html: reminderEmailHtml({
           serviceName: service?.name || 'Barber service',
           barberName: barber?.name || 'Sahil Cutz barber',
@@ -133,17 +150,11 @@ export async function GET(request) {
 
       if (!result.success) {
         failed += 1;
-        continue;
-      }
-
-      const { error: updateError } = await supabase
-        .from('appointments')
-        .update({ reminder_sent: true })
-        .eq('id', appointment.id);
-
-      if (updateError) {
-        failed += 1;
-        console.error(`Reminder sent but not marked for appointment ${appointment.id}: ${updateError.message}`);
+        await supabase
+          .from('appointments')
+          .update({ reminder_sent: false })
+          .eq('id', appointment.id)
+          .eq('reminder_sent', true);
         continue;
       }
 
