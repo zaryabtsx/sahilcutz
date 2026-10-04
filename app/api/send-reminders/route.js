@@ -29,6 +29,8 @@ function getRequestSecret(request) {
 
   return (
     request.headers.get('x-cron-secret') ||
+    request.headers.get('x-vercel-cron-secret') ||
+    request.headers.get('x-vercel-cron') ||
     bearer ||
     request.nextUrl.searchParams.get('secret')
   );
@@ -45,11 +47,13 @@ function validIds(rows, key) {
 export async function GET(request) {
   try {
     const configuredSecret = process.env.CRON_SECRET;
+    const requestSecret = getRequestSecret(request);
+
     if (!configuredSecret) {
       return NextResponse.json({ error: 'CRON_SECRET is not configured' }, { status: 500 });
     }
 
-    if (getRequestSecret(request) !== configuredSecret) {
+    if (requestSecret !== configuredSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

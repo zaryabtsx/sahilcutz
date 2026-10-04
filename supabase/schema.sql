@@ -106,6 +106,9 @@ create table if not exists reviews (
 alter table public.appointments
   add column if not exists reminder_sent boolean not null default false;
 
+alter table public.appointments
+  add column if not exists notes text;
+
 create index if not exists appointments_reminder_lookup_idx
   on public.appointments (start_at)
   where reminder_sent = false;
