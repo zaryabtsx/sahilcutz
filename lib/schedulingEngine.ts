@@ -149,6 +149,21 @@ export async function insertEmergencyAppointment(
       emergencyAppointment.end_at
     );
 
+    const pakistanDateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+    });
+    const todayInPakistan = pakistanDateFormatter.format(new Date());
+    const sameDayConflicts = conflicting.filter(
+      (appointment) =>
+        pakistanDateFormatter.format(new Date(appointment.start_at)) === todayInPakistan
+    );
+
+    if (sameDayConflicts.length > 0) {
+      throw new Error(
+        "Today's appointments cannot be rescheduled. Choose another time or date."
+      );
+    }
+
     if (conflicting.length === 0) {
       const { data, error } = await supabase.from('appointments').insert([
         { ...emergencyAppointment, is_emergency: true },
